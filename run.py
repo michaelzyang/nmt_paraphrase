@@ -31,20 +31,18 @@ parser.add_argument('--checkpt-path', type=str, default="")
 # Hyperparameters: data
 parser.add_argument('-n', '--batch', type=int, default=256)
 # Hyperparameters: architecture
-parser.add_argument('s', '--src-vocab-size', type=int)
-parser.add_argument('t', '--tgt-vocab-size', type=int)
 parser.add_argument('-d', '--hidden-dim', type=int, default=512)
 parser.add_argument('-l', '--max-len', type=int, default=512)
 parser.add_argument('-h', '--num-heads', type=int, default=8)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
-parser.add_argument('f', '--dim-feedforward', type=int, default=2048)
-parser.add_argument('--dropout', type=float, default=0.1)
-parser.add_argument('a', '--activation', type=str, default='relu', choices=['relu'])
+parser.add_argument('-f', '--dim-feedforward', type=int, default=2048)
+parser.add_argument('-p', '--dropout', type=float, default=0.1)
+parser.add_argument('-a', '--activation', type=str, default='relu', choices=['relu'])
 # Hyperparameters: training
 parser.add_argument('-e', '--epochs', type=int, default=50)
 # Hyperparameters: optimization
-parser.add_argument('o', '--optimizer', type=str, default='adam', choices=['adam', 'sgd'])
+parser.add_argument('-o', '--optimizer', type=str, default='adam', choices=['adam', 'sgd'])
 parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--scheduler', type=str, default='plateau', choices=['none', 'plateau'])
@@ -80,7 +78,9 @@ if MODE == 'train':
     # idx_to_class = {idx: data_class for data_class, idx in val_data.class_to_idx.items()}
     # del train_data
     # del val_data
+    train_loader, dev_loader, idx_to_subword, sos_token, eos_token, src_vocab_size, tgt_vocab_size = None
 else: # MODE == 'inference'
+    test_loader = None
     # test_data = datasets.ImageFolder(root=TEST_PATH, transform=data_transform)
     # test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
     # print(f"Loaded {len(test_data)} test images.")
@@ -94,7 +94,7 @@ else: # MODE == 'inference'
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
-model = TransformerModel(args.src_vocab_size, args.tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
+model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
                          args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
                          weight_tie=True)
 model.to(device)
