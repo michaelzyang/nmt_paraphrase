@@ -4,15 +4,16 @@ import json
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
+from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN
 from models import TransformerModel, init_weights
 from train_test import train, eval_bleu
 
 
 # ======================= Set Up Environment ======================= #
 # System parameters
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('-i', '--inference', action='store_true')
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
@@ -32,8 +33,9 @@ parser.add_argument('--checkpt-path', type=str, default="")
 parser.add_argument('-n', '--batch', type=int, default=256)
 # Hyperparameters: architecture
 parser.add_argument('-d', '--hidden-dim', type=int, default=512)
-parser.add_argument('-l', '--max-len', type=int, default=512)
-parser.add_argument('-h', '--num-heads', type=int, default=8)
+# TODO
+# parser.add_argument('-l', '--max-len', type=int, default=512)
+parser.add_argument('-h', '--num_heads', type=int, default=8)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
 parser.add_argument('-f', '--dim-feedforward', type=int, default=2048)
@@ -68,35 +70,29 @@ print(f"Device = {device}")
 # TODO Determine whether label smoothing occurs here or in the train loop
 
 if MODE == 'train':
-    # train_data = datasets.ImageFolder(root=TRAIN_PATH, transform=data_transform)
-    # train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=8)
-    #
-    # val_data = datasets.ImageFolder(root=VAL_PATH, transform=data_transform)
-    # val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
-    #
-    # print(f"Loaded {len(train_data)} training images, {len(val_data)} validation images.")
-    # idx_to_class = {idx: data_class for data_class, idx in val_data.class_to_idx.items()}
-    # del train_data
-    # del val_data
-    train_loader, dev_loader, idx_to_subword, sos_token, eos_token, src_vocab_size, tgt_vocab_size = None
-else: # MODE == 'inference'
-    test_loader = None
-    # test_data = datasets.ImageFolder(root=TEST_PATH, transform=data_transform)
-    # test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=8)
-    # print(f"Loaded {len(test_data)} test images.")
-    #
-    # # get folder idx to class mapping from val_path, as test_path folder structure does not encode the mapping
-    # val_data = datasets.ImageFolder(root=VAL_PATH, transform=data_transform)
-    # class_to_idx = val_data.class_to_idx
-    # idx_to_class = {idx: data_class for data_class, idx in class_to_idx.items()}
-    # del val_data
+    train_data = NMTData(args.train_src, args.train_tgt, args.train_src_dict, args.train_tgt_dict)
+    print(len(train_data))
+    train_loader = DataLoader(train_data, batch_size=args.batch, shuffle=True, num_workers=0)
+    dev_data = NMTData(args.dev_src, args.dev_tgt, args.dev_src_dict, args.dev_tgt_dict)
+    dev_loader = DataLoader(dev_data, batch_size=args.batch, shuffle=False, num_workers=0)
 
+else: # MODE == 'inference'
+    test_data = NMTData(args.test_src, args.test_tgt, args.test_src_dict, args.test_tgt_dict)
+    test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, num_workers=8)
+
+subword_to_idx = json_to_dict(args.train_tgt_dict)
+idx_to_subword = {v: k for k, v in subword_to_idx.items()}
+src_vocab_size = len(json_to_dict(args.train_src_dict))
+tgt_vocab_size = len(subword_to_idx)
+
+# TODO: HACK REMOVE
+args.max_len = train_data.maxlen_target
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
 model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
                          args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
-                         weight_tie=True)
+                         weight_tie=False)
 model.to(device)
 
 if MODE == 'train':
@@ -119,10 +115,10 @@ if MODE == 'train':
 
 # Initialize from checkpoint if provided
 if MODE == 'train':
-    start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=init_weights)
+    start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=None)
     if start_epoch == 1:
         with open(args.save_dir + "params.json", mode='w') as f:
-            json.dump(args, f)
+            json.dump(vars(args), f)
 else: # MODE == 'inference'
     utils.load_inference(model, args.checkpt_path)
 
@@ -131,9 +127,9 @@ else: # MODE == 'inference'
 # Run model
 if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
-    train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, args.max_len, args.beam_size, model, epochs_left,
+    train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model, epochs_left,
           criterion, optimizer, scheduler=None, save_dir=args.save_dir, start_epoch=start_epoch, report_freq=0,
           device='gpu')
 else: # MODE == 'inference'
-    bleu_score = eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, args.max_len, args.beam_size, device='gpu')
+    bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, device='gpu')
     print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")

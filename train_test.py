@@ -3,7 +3,7 @@ import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
 from datetime import datetime
 
-from data_preprocessing import idxs_to_sentences
+from data_processing import idxs_to_sentences
 
 
 def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
@@ -28,7 +28,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
         save_dir = save_dir + '/'
 
     model.train()
-    tgt_mask = nn.Transformer.generate_square_subsequent_mask(max_len)
+    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len)
 
     print(f"Beginning training at {datetime.now()}")
     if start_epoch == 1:
@@ -41,8 +41,9 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
         for batch_num, batch in enumerate(train_loader):
             # Unpack batch objects
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
-            src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
-            tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+            #TODO: FIX
+            # src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
+            # tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
 
             # Update weights
             optimizer.zero_grad()

@@ -1,0 +1,7 @@
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
+epoch,train_bleu,dev_bleu
