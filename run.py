@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
 from models import TransformerModel, init_weights
-from train_test import train
+from train_test import train, eval_bleu
 
 
 # ======================= Set Up Environment ======================= #
@@ -118,21 +118,22 @@ if MODE == 'train':
 
 
 # Initialize from checkpoint if provided
-if MODE == 'inference':
-    utils.load_inference(model, args.checkpt_path)
-else: # MODE == "train"
+if MODE == 'train':
     start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=init_weights)
     if start_epoch == 1:
         with open(args.save_dir + "params.json", mode='w') as f:
             json.dump(args, f)
+else: # MODE == 'inference'
+    utils.load_inference(model, args.checkpt_path)
 
 
 # ======================= Run Script ======================= #
 # Run model
 if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
-    train(train_loader, val_loader, tgt_vocab, sos_token, eos_token, args.max_len, args.beam_size, model, epochs_left,
+    train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, args.max_len, args.beam_size, model, epochs_left,
           criterion, optimizer, scheduler=None, save_dir=args.save_dir, start_epoch=start_epoch, report_freq=0,
           device='gpu')
 else: # MODE == 'inference'
-    raise NotImplementedError
+    bleu_score = eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, args.max_len, args.beam_size, device='gpu')
+    print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")

@@ -1,10 +1,8 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
 from datetime import datetime
 
-from models import TransformerModel
 from data_preprocessing import idxs_to_sentences
 
 
@@ -69,8 +67,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask, loss
 
         # Evaluate epoch
-        train_bleu = eval_epoch_bleu(model, train_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
-        dev_bleu = eval_epoch_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
+        train_bleu = eval_bleu(model, train_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
+        dev_bleu = eval_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
         print(f'Train BLEU: {train_bleu:.2f}\t\
               Development BLEU: {dev_bleu:.2f}\t\
               {datetime.now()}')
@@ -91,7 +89,19 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             f.write(f"{epoch},{train_bleu},{dev_bleu}\n")
 
 
-def eval_epoch_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
+def eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
+    """
+    Evaluates the BLEU score of the model on a given dataset
+    :param model: The model being evaluated
+    :param test_loader: A dataloader for the data over which to evaluate
+    :param idx_to_subword: The dictionary for the vocabulary of subword indices to subwords
+    :param sos_token: The index of the start of sentence token
+    :param eos_token: The index of the end of sentence token
+    :param max_len: The maximum length of an output sequence
+    :param beam_size: The beam size used for the beam search algorithm when decoding
+    :param device: The torch device used for processing the training
+    :return: The BLEU score out of 100
+    """
     model.eval()
     hyps = []
     refs = []
