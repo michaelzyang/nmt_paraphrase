@@ -1,78 +1,72 @@
 import argparse
 import utils
+import json
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
-from models import Vaswani, init_weights
-from train_test import train, eval
+from models import TransformerModel, init_weights
+from train_test import train
 
-# ======================= TODO MY ======================= #
-# Parse parameters
+
+# ======================= Set Up Environment ======================= #
+# System parameters
 parser = argparse.ArgumentParser()
-parser.add_argument('-m', '--mode', type=str, default="train", choices=["train", "classify", "verify"])
-parser.add_argument('--train-path', type=str, default="11-785hw2p2-s20/train_data/medium/")
-parser.add_argument('--val-path', type=str, default="11-785hw2p2-s20/validation_classification/medium/")
-parser.add_argument('--test-path', type=str, default="11-785hw2p2-s20/test_classification/")
-parser.add_argument('--verification-pairs', type=str, default="11-785hw2p2-s20/test_trials_verification_student.txt")
-parser.add_argument('--save-path', type=str, default="save/")
-parser.add_argument('--load-path', type=str, default='')
-
+parser.add_argument('-i', '--inference', action='store_true')
+parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
+parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
+parser.add_argument('--train-src-dict', type=str, default="data/train.BPE.en.json")
+parser.add_argument('--train-tgt-dict', type=str, default="data/train.BPE.de.json")
+parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
+parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
+parser.add_argument('--dev-src-dict', type=str, default="data/dev.BPE.en.json")
+parser.add_argument('--dev-tgt-dict', type=str, default="data/dev.BPE.de.json")
+parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
+parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+parser.add_argument('--test-src-dict', type=str, default="data/test.BPE.en.json")
+parser.add_argument('--test-tgt-dict', type=str, default="data/test.BPE.de.json")
+parser.add_argument('--save-dir', type=str, default="save/")
+parser.add_argument('--checkpt-path', type=str, default="")
 # Hyperparameters: data
-parser.add_argument('-b', '--batch', type=int, default=256)
+parser.add_argument('-n', '--batch', type=int, default=256)
 # Hyperparameters: architecture
-parser.add_argument('-c', '--block-channels', nargs='+', default=['64', '128', '256', '512'])
-parser.add_argument('-l', '--layer-blocks', nargs='+', default=['2', '2', '2', '2'])
-parser.add_argument('-k', '--kernel-sizes', nargs='+', default=['3', '3', '3', '3'])
-parser.add_argument('-s', '--strides', nargs='+', default=['1', '1', '2', '2']) # 32 => 32 -> 32 -> 16 -> 8 => 1
-parser.add_argument('-p', '--pool-size', type=int, default=4)
+parser.add_argument('s', '--src-vocab-size', type=int)
+parser.add_argument('t', '--tgt-vocab-size', type=int)
+parser.add_argument('-d', '--hidden-dim', type=int, default=512)
+parser.add_argument('-l', '--max-len', type=int, default=512)
+parser.add_argument('-h', '--num-heads', type=int, default=8)
+parser.add_argument('--enc-layers', type=int, default=6)
+parser.add_argument('--dec-layers', type=int, default=6)
+parser.add_argument('f', '--dim-feedforward', type=int, default=2048)
+parser.add_argument('--dropout', type=float, default=0.1)
+parser.add_argument('a', '--activation', type=str, default='relu', choices=['relu'])
 # Hyperparameters: training
 parser.add_argument('-e', '--epochs', type=int, default=50)
 # Hyperparameters: optimization
-parser.add_argument('--lr', type=float, default=0.1)
+parser.add_argument('o', '--optimizer', type=str, default='adam', choices=['adam', 'sgd'])
+parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--momentum', type=float, default=0.9)
-parser.add_argument('--schedule', type=str, default='plateau')
+parser.add_argument('--scheduler', type=str, default='plateau', choices=['none', 'plateau'])
 # Hyperparameters: regularization
-parser.add_argument('--weight-decay', type=float, default=5e-5)
+parser.add_argument('--weight-decay', type=float, default=0.0)
+# Hyperparameters: inference
+parser.add_argument('-b', '--beam_size', type=int, default=5)
 
 args = parser.parse_args()
-MODE = args.mode
-TRAIN_PATH = args.train_path
-VAL_PATH = args.val_path
-TEST_PATH = args.test_path
-VERIFICATION_PAIRS = args.verification_pairs
-SAVE_PATH = args.save_path
-if SAVE_PATH[-1] != '/':
-    SAVE_PATH = SAVE_PATH + '/'
-LOAD_PATH = args.load_path
-
-BATCH_SIZE = args.batch
-IN_CHANNELS = 3
-BLOCK_CHANNELS = [int(x) for x in args.block_channels]
-LAYER_BLOCKS = [int(x) for x in args.layer_blocks]
-KERNEL_SIZES = [int(x) for x in args.kernel_sizes]
-STRIDES = [int(x) for x in args.strides]
-POOL_SIZE = args.pool_size
-N_EPOCHS = args.epochs
-LR = args.lr
-MOMENTUM = args.momentum
-SCHEDULE = args.schedule
-W_DECAY = args.weight_decay
+MODE = 'inference' if args.inference else 'train'
+if args.save_dir[-1] != '/':
+    args.save_dir = args.save_dir + '/'
 
 # Ensure save path exists
-SAVE_PATH = utils.check_save_path(SAVE_PATH)
+args.save_dir = utils.check_save_dir(args.save_dir)
 
 # System config
 device = utils.get_device()
 print(f"Device = {device}")
 
 
-# ======================= TODO RM ======================= #
-
-# TODO Define Dataset class
-# TODO BPE
+# ======================= Load Data ======================= #
 # TODO Determine whether label smoothing occurs here or in the train loop
 
 if MODE == 'train':
@@ -98,68 +92,47 @@ else: # MODE == 'inference'
     # del val_data
 
 
-
-# ======================= TODO ALL ======================= #
-# TODO Determine how to define the Vaswani et al. 'big' model using nn.Transformer
-
+# ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
-model = Resnet(IN_CHANNELS, BLOCK_CHANNELS, LAYER_BLOCKS, KERNEL_SIZES, STRIDES, POOL_SIZE, N_CLASSES)
+model = TransformerModel(args.src_vocab_size, args.tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
+                         args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
+                         weight_tie=True)
 model.to(device)
 
-
-# ======================= TODO MY ======================= #
-# TODO Write utils
-
-if MODE == "train":
+if MODE == 'train':
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=LR, weight_decay=W_DECAY, momentum=MOMENTUM)
-    if SCHEDULE == "plateau":
+
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    elif args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
+    else:
+        raise NotImplementedError(f"Optimizer of type {args.optimizer} not implemented.")
+
+    if args.scheduler == "plateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, patience=0, verbose=True)
-    elif SCHEDULE.lower() == "none":
+    elif args.scheduler == "none":
         scheduler = None
     else:
-        raise NotImplementedError(f"Learning rate scheduler of type {SCHEDULE} not implemented.")
+        raise NotImplementedError(f"Learning rate scheduler of type {args.scheduler} not implemented.")
 
 
 # Initialize from checkpoint if provided
 if MODE == 'inference':
-    utils.load_inference(model, LOAD_PATH)
+    utils.load_inference(model, args.checkpt_path)
 else: # MODE == "train"
-    start_epoch = utils.init_load_train(model, LOAD_PATH, optimizer=optimizer, init_fn=init_weights)
+    start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=init_weights)
     if start_epoch == 1:
-        with open(SAVE_PATH + "params.txt", mode='w') as f:
-            f.writelines([
-                f"Batch size: {BATCH_SIZE}\n",
-                f"Block channels: {BLOCK_CHANNELS}\n",
-                f"Layer blocks: {LAYER_BLOCKS}\n",
-                f"Kernel sizes: {KERNEL_SIZES}\n",
-                f"Strides: {STRIDES}\n",
-                f"Pooling kernel size: {POOL_SIZE}\n",
-                f"Learning rate: {LR}\n",
-                f"Momentum: {MOMENTUM}\n",
-                f"Scheduler: {SCHEDULE}\n",
-                f"Weight decay: {W_DECAY}\n",
-                str(model) + '\n',
-                str(optimizer)
-            ])
+        with open(args.save_dir + "params.json", mode='w') as f:
+            json.dump(args, f)
 
-# ======================= TODO YL ======================= #
-# TODO Write train loop using teacher forcing and MLE
-# TODO Write eval loop using beam search and BLEU
+
+# ======================= Run Script ======================= #
 # Run model
 if MODE == 'train':
-    # train(train_loader, val_loader, N_EPOCHS, model, criterion, optimizer, scheduler, SAVE_PATH, start_epoch, device, task='Classification')
-    raise NotImplementedError
+    epochs_left = args.epochs - start_epoch + 1
+    train(train_loader, val_loader, tgt_vocab, sos_token, eos_token, args.max_len, args.beam_size, model, epochs_left,
+          criterion, optimizer, scheduler=None, save_dir=args.save_dir, start_epoch=start_epoch, report_freq=0,
+          device='gpu')
 else: # MODE == 'inference'
-    # # construct list of filenames
-    # idx_to_file = [x.split('/')[-1] for x, _ in test_data.imgs]
-    #
-    # # predict labels
-    # predictions = eval(test_loader, model, device, out_type="classes") # shape (N, )
-    # predictions = predictions.cpu().detach().numpy()
-    # predictions = np.array([idx_to_class[x] for x in predictions]) # map ImageFolder indices back to classes
-    #
-    # # save predictions in Kaggle submission format
-    # submit_table = np.vstack([idx_to_file, predictions]).T
-    # np.savetxt(SAVE_PATH + "predictions.csv", submit_table, fmt='%s', delimiter=',', header="Id,Category", comments='')
     raise NotImplementedError

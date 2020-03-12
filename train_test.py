@@ -1,131 +1,117 @@
 import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
+import sacrebleu  # https://github.com/mjpost/sacreBLEU
 from datetime import datetime
 
-
-def train(train_loader, val_loader, n_epochs, model, criterion, optimizer, scheduler=None,
-          save_path="./", start_epoch=1, device='gpu', task='Classification'):
-    raise NotImplementedError
-    # if save_path[-1] != '/':
-    #     save_path = save_path + '/'
-    #
-    # model.train()
-    #
-    # print(f"Beginning training at {datetime.now()}")
-    # if start_epoch == 1:
-    #     with open(save_path + f"results.txt", mode='a') as f:
-    #         f.write("epoch,train_loss,train_acc,val_loss,val_acc\n")
-    #
-    # for epoch in range(start_epoch, n_epochs + 1):
-    #     avg_loss = 0.0
-    #     for batch_num, (feats, labels) in enumerate(train_loader):
-    #         feats, labels = feats.to(device), labels.to(device)
-    #
-    #         optimizer.zero_grad()
-    #         outputs = model(feats)[1]
-    #         loss = criterion(outputs, labels.long())
-    #         loss.backward()
-    #         optimizer.step()
-    #
-    #         avg_loss += loss.item()
-    #
-    #         if batch_num % 400 == 399:
-    #             print(f'Epoch: {epoch}\t\
-    #                   Batch: {batch_num + 1}\t\
-    #                   Avg-Loss: {avg_loss / 400:.4f}\t\
-    #                   {datetime.now()}')
-    #             avg_loss = 0.0
-    #
-    #         torch.cuda.empty_cache()
-    #         del feats
-    #         del labels
-    #         del loss
-    #
-    #     if task == 'Classification':
-    #         val_loss, val_acc = test_classify(model, val_loader, criterion, device)
-    #         train_loss, train_acc = test_classify(model, train_loader, criterion, device)
-    #         print(f'Train Loss: {train_loss:.4f}\t\
-    #               Train Accuracy: {train_acc:.4f}\t\
-    #               Val Loss: {val_loss:.4f}\t\
-    #               Val Accuracy: {val_acc:.4f}\t\
-    #               {datetime.now()}')
-    #         if scheduler:
-    #             scheduler.step(val_loss)
-    #     else:
-    #         raise NotImplementedError("Verification evaluation not implemented.")
-    #
-    #     # save epoch
-    #     torch.save({
-    #         'epoch': epoch,
-    #         'model_state_dict': model.state_dict(),
-    #         'optimizer_state_dict': optimizer.state_dict(),
-    #         'train_loss': train_loss,
-    #         'train_acc': train_acc,
-    #         'val_loss': val_loss,
-    #         'val_acc': val_acc
-    #     }, save_path + f"checkpoint_{epoch}_{val_acc}.pth")
-    #
-    #     with open(save_path + f"results.txt", mode='a') as f:
-    #         f.write(f"{epoch},{train_loss},{train_acc},{val_loss},{val_acc}\n")
+from models import TransformerModel
+from data_preprocessing import idxs_to_sentences
 
 
-def test_classify(model, test_loader, criterion, device='gpu'):
-    raise NotImplementedError
-    # model.eval()
-    # test_loss = []
-    # accuracy = 0
-    # total = 0
-    # with torch.no_grad():
-    #     for batch_num, (feats, labels) in enumerate(test_loader):
-    #         feats, labels = feats.to(device), labels.to(device)
-    #         outputs = model(feats)[1]
-    #
-    #         _, pred_labels = torch.max(F.softmax(outputs, dim=1), 1)
-    #         pred_labels = pred_labels.view(-1)
-    #
-    #         loss = criterion(outputs, labels.long())
-    #
-    #         accuracy += torch.sum(torch.eq(pred_labels, labels)).item()
-    #         total += len(labels)
-    #         batch_size = feats.size()[0]  # final batch might be smaller than the rest
-    #         test_loss.extend([loss.item()] * batch_size)
-    #
-    #         torch.cuda.empty_cache()
-    #         del feats
-    #         del labels
-    #
-    # model.train()
-    # return np.mean(test_loss), accuracy / total
+def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
+          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='gpu'):
+    """
+    Training procedure, saving the model checkpoint after every epoch
+    :param train_loader: training set dataloader
+    :param dev_loader: training set dataloader
+    :param n_epochs: the number of epochs to run
+    :param model: the torch Module
+    :param criterion: the loss criterion
+    :param optimizer: the optimizer for making updates
+    :param scheduler: the scheduler for the learning rate
+    :param save_dir: the save directory
+    :param start_epoch: the starting epoch number (greater than 1 if continuing from a checkpoint)
+    :param device: the torch device used for processing the training
+    :param report_freq: report training set loss every report_freq batches
+    :return: None
+    """
+    # Setup
+    if save_dir[-1] != '/':
+        save_dir = save_dir + '/'
+
+    model.train()
+    tgt_mask = nn.Transformer.generate_square_subsequent_mask(max_len)
+
+    print(f"Beginning training at {datetime.now()}")
+    if start_epoch == 1:
+        with open(save_dir + "results.txt", mode='a') as f:
+            f.write("epoch,train_bleu,dev_bleu\n")
+
+    # Train epochs
+    for epoch in range(start_epoch, n_epochs + 1):
+        avg_loss = 0.0
+        for batch_num, batch in enumerate(train_loader):
+            # Unpack batch objects
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
+            src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
+            tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+
+            # Update weights
+            optimizer.zero_grad()
+            outputs = model(src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+                            src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
+                            memory_key_padding_mask=src_key_padding_mask)
+            loss = criterion(outputs, tgt_tokens.long())
+            loss.backward()
+            optimizer.step()
+
+            # Accumulate loss for reporting
+            avg_loss += loss.item()
+            if report_freq and (batch_num + 1) % report_freq == 0:
+                print(f'Epoch: {epoch}\t\
+                      Batch: {batch_num + 1}\t\
+                      Avg-Loss: {avg_loss / report_freq:.4f}\t\
+                      {datetime.now()}')
+                avg_loss = 0.0
+
+            # Cleanup
+            torch.cuda.empty_cache()
+            del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask, loss
+
+        # Evaluate epoch
+        train_bleu = eval_epoch_bleu(model, train_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
+        dev_bleu = eval_epoch_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
+        print(f'Train BLEU: {train_bleu:.2f}\t\
+              Development BLEU: {dev_bleu:.2f}\t\
+              {datetime.now()}')
+
+        if scheduler:
+            scheduler.step(dev_bleu)
+
+        # save epoch
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_BLEU': train_bleu,
+            'dev_BLEU': dev_bleu
+        }, save_dir + f"checkpoint_{epoch}_{dev_bleu:.2f}.pth")
+
+        with open(save_dir + "results.txt", mode='a') as f:
+            f.write(f"{epoch},{train_bleu},{dev_bleu}\n")
 
 
-def eval(test_loader, model, device='gpu', out_type="classes"):
-    raise NotImplementedError
-    # if out_type == "classes":
-    #     out_idx = 1
-    # elif out_type == "embeddings":
-    #     out_idx = 0
-    # else:
-    #     raise ValueError(f"out_type must be 'classes' or 'embeddings'. {out_type} given.")
-    # model.eval()
-    #
-    # results = []
-    # with torch.no_grad():
-    #     for i, (feats, _) in enumerate(test_loader):
-    #         feats = feats.to(device)
-    #
-    #         outputs = model(feats)[out_idx]
-    #         outputs = outputs.detach().to("cpu")
-    #         if out_type == "classes":
-    #             _, pred_labels = torch.max(F.softmax(outputs, dim=1), 1)
-    #             outputs = pred_labels.view(-1)
-    #         else: # out_type == "embeddings"
-    #             if i % 50 == 49:
-    #                 print(f"Completed batch {i + 1} at {datetime.now()}")
-    #
-    #         results.append(outputs)
-    #
-    #         torch.cuda.empty_cache()
-    #         del feats
-    #
-    # return torch.cat(results)
+def eval_epoch_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
+    model.eval()
+    hyps = []
+    refs = []
+
+    with torch.no_grad():
+        for batch in test_loader:
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
+            src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
+            tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+
+            hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
+            hyps.extend(hyp_batch)  # [N]
+
+            ref_batch = idxs_to_sentences(tgt_tokens, idx_to_subword)  # list of single-element lists
+            refs.extend(ref_batch)
+
+            torch.cuda.empty_cache()
+            del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
+
+    bleu = sacrebleu.corpus_bleu(hyps, refs)
+
+    model.train()
+    return bleu.score
