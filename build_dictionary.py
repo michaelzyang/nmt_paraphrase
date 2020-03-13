@@ -25,9 +25,10 @@ def main():
         sorted_words = [words[ii] for ii in sorted_idx[::-1]]
 
         worddict = OrderedDict()
-        worddict['<SOS>'] = 0
-        worddict['<EOS>'] = 1
-        worddict['<UNK>'] = 2
+        worddict['<PAD>'] = 0
+        worddict['<SOS>'] = 1
+        worddict['<EOS>'] = 2
+        worddict['<UNK>'] = 3
         # FIXME We shouldn't assume <EOS>, <SOS>, and <UNK> aren't BPE subwords.
         for ii, ww in enumerate(sorted_words):
             worddict[ww] = ii+3

@@ -4,8 +4,7 @@ from torch.utils.data import Dataset
 import json
 
 
-SOS_TOKEN, EOS_TOKEN, UNK = 0, 1, 2
-
+PAD, SOS_TOKEN, EOS_TOKEN, UNK = 0, 1, 2, 3
 
 def json_to_dict(filename):
     with open(filename) as infile:
@@ -34,32 +33,36 @@ class NMTData(Dataset):
         target_dict = json_to_dict(TGT_DICT)
 
         for item in read_dataset(SOURCE, TARGET, source_dict, target_dict):
-            self.maxlen_source = max(self.maxlen_source, len(item[0]))
-            self.maxlen_target = max(self.maxlen_target, len(item[1]))
+            # self.maxlen_source = max(self.maxlen_source, len(item[0]))
+            # self.maxlen_target = max(self.maxlen_target, len(item[1]))
+            self.maxlen_source = 256
+            self.maxlen_target = 256
             self.source.append(item[0])
             self.target.append(item[1])
             self.length += 1
 
         for i in range(len(self.source)):
             diff = self.maxlen_source - len(self.source[i])
+            assert diff>=0
             mask = list()
             mask += [False] * len(self.source[i])
-            self.source[i] += [EOS_TOKEN] * diff
+            self.source[i] += [PAD] * diff
             mask += [True] * diff
             self.source_mask.append(mask)
 
         for i in range(len(self.target)):
             diff = self.maxlen_target - len(self.target[i])
+            assert diff>=0
             mask = list()
             mask += [False] * len(self.target[i])
-            self.target[i] += [EOS_TOKEN] * diff
+            self.target[i] += [PAD] * diff
             mask += [True] * diff
             self.target_mask.append(mask)
 
         self.source = torch.from_numpy(np.asarray(self.source))
         self.target = torch.from_numpy(np.asarray(self.target))
-        self.source_mask = torch.ByteTensor(self.source_mask)
-        self.target_mask = torch.ByteTensor(self.target_mask)
+        self.source_mask = torch.BoolTensor(self.source_mask)
+        self.target_mask = torch.BoolTensor(self.target_mask)
 
     def __len__(self):
         return self.length
