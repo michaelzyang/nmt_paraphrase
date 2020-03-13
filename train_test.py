@@ -7,20 +7,25 @@ from data_processing import idxs_to_sentences
 
 
 def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
-          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='cpu'):
+          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='gpu'):
     """
     Training procedure, saving the model checkpoint after every epoch
     :param train_loader: training set dataloader
     :param dev_loader: training set dataloader
-    :param n_epochs: the number of epochs to run
+    :param idx_to_subword: The dictionary for the vocabulary of subword indices to subwords
+    :param sos_token: The index of the start of sentence token
+    :param eos_token: The index of the end of sentence token
+    :param max_len: The maximum length of an output sequence
+    :param beam_size: The beam size used for the beam search algorithm when decoding
     :param model: the torch Module
+    :param n_epochs: the number of epochs to run
     :param criterion: the loss criterion
     :param optimizer: the optimizer for making updates
     :param scheduler: the scheduler for the learning rate
     :param save_dir: the save directory
     :param start_epoch: the starting epoch number (greater than 1 if continuing from a checkpoint)
-    :param device: the torch device used for processing the training
     :param report_freq: report training set loss every report_freq batches
+    :param device: the torch device used for processing the training
     :return: None
     """
     # Setup
@@ -33,34 +38,29 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     print(f"Beginning training at {datetime.now()}")
     if start_epoch == 1:
         with open(save_dir + "results.txt", mode='a') as f:
-            f.write("epoch,train_bleu,dev_bleu\n")
+            f.write("epoch,dev_loss\n")
 
     # Train epochs
     for epoch in range(start_epoch, n_epochs + 1):
-        avg_loss = 0.0
+        avg_loss = 0.0  # for accumulating loss per reporting cycle over batches
         for batch_num, batch in enumerate(train_loader):
             # Unpack batch objects
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
-            #TODO: FIX
-            # src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
-            # tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+            src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
+            tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
 
             # Update weights
             optimizer.zero_grad()
-            outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
-                            src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask[:, 1:],
-                            memory_key_padding_mask=src_key_padding_mask)
-            outputs = outputs.transpose(0, 1).transpose(1, 2)
-            loss = criterion(outputs, tgt_tokens[:, 1:].long())
+            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+                                src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
+                                memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
             loss.backward()
             optimizer.step()
 
             # Accumulate loss for reporting
             avg_loss += loss.item()
             if report_freq and (batch_num + 1) % report_freq == 0:
-                print(f'Epoch: {epoch}\t\
-                      Batch: {batch_num + 1}\t\
-                      Avg-Loss: {avg_loss / report_freq:.4f}\t\
+                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\t\
                       {datetime.now()}')
                 avg_loss = 0.0
 
@@ -69,33 +69,66 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask, loss
 
         # Evaluate epoch
-        train_bleu = eval_bleu(model, train_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
-        dev_bleu = eval_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device)
-        print(f'Train BLEU: {train_bleu:.2f}\t\
-              Development BLEU: {dev_bleu:.2f}\t\
-              {datetime.now()}')
+        dev_loss = eval_loss(model, dev_loader, max_len, criterion, device)
+        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
+        with open(save_dir + "results.txt", mode='a') as f:
+            f.write(f"{epoch},{dev_loss}\n")
 
         if scheduler:
-            scheduler.step(dev_bleu)
+            scheduler.step(dev_loss)
 
-        # save epoch
-        torch.save({
+        # save epoch checkpoint
+        checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'train_BLEU': train_bleu,
-            'dev_BLEU': dev_bleu
-        }, save_dir + f"checkpoint_{epoch}_{dev_bleu:.2f}.pth")
-
-        with open(save_dir + "results.txt", mode='a') as f:
-            f.write(f"{epoch},{train_bleu},{dev_bleu}\n")
+            'dev_loss': dev_loss
+        }
+        torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
+    print(f"Finished training at {datetime.now()}")
 
 
-def eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
+def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
+    """
+    Evaluates the loss of the model on a given dataset
+    :param model: The model being evaluated
+    :param data_loader: A dataloader for the data over which to evaluate
+    :param max_len: The maximum length of an output sequence
+    :param criterion: The loss criterion being computed
+    :param device: The torch device used for processing the training
+    :return: The average loss per sentence
+    """
+    model.eval()
+    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
+    loss_accum = 0.0
+    batch_count = 0
+
+    with torch.no_grad():
+        for batch in data_loader:
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
+            src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
+            tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+
+            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+                                src_key_padding_mask=src_key_padding_mask,
+                                tgt_key_padding_mask=tgt_key_padding_mask,
+                                memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
+            loss_accum += loss
+            batch_count += 1
+
+            torch.cuda.empty_cache()
+            del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
+
+    model.train()
+
+    return loss_accum / batch_count
+
+
+def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
     """
     Evaluates the BLEU score of the model on a given dataset
     :param model: The model being evaluated
-    :param test_loader: A dataloader for the data over which to evaluate
+    :param data_loader: A dataloader for the data over which to evaluate
     :param idx_to_subword: The dictionary for the vocabulary of subword indices to subwords
     :param sos_token: The index of the start of sentence token
     :param eos_token: The index of the end of sentence token
@@ -105,11 +138,12 @@ def eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len,
     :return: The BLEU score out of 100
     """
     model.eval()
+
     hyps = []
     refs = []
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in data_loader:
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
@@ -123,7 +157,20 @@ def eval_bleu(model, test_loader, idx_to_subword, sos_token, eos_token, max_len,
             torch.cuda.empty_cache()
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
 
-    bleu = sacrebleu.corpus_bleu(hyps, refs)
-
     model.train()
+
+    bleu = sacrebleu.corpus_bleu(hyps, refs)
     return bleu.score
+
+
+def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,
+                 tgt_key_padding_mask, memory_key_padding_mask, criterion):
+    # drop last token for tgt_tokens input as decoder at each time step should attend to all tokens up to prev token
+    # shift tgt_key_padding_mask left by one position for the same reason (the eos tag will end up being masked out
+    outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
+                    src_key_padding_mask=src_key_padding_mask,
+                    tgt_key_padding_mask=tgt_key_padding_mask[:, 1:],
+                    memory_key_padding_mask=memory_key_padding_mask)
+    outputs = outputs.transpose(0, 1).transpose(1, 2)
+    loss = criterion(outputs, tgt_tokens[:, 1:].long())
+    return loss

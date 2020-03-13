@@ -8,33 +8,35 @@ from torch.utils.data import DataLoader
 
 from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
 from models import TransformerModel, init_weights
-from train_test import train, eval_bleu
+from train_test import train, eval_loss, eval_bleu
 
 
 # ======================= Set Up Environment ======================= #
 # System parameters
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('-i', '--inference', action='store_true')
-#TODO: Accept single dictionary
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
+# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
 parser.add_argument('--train-src-dict', type=str, default="data/train.BPE.en.json")
 parser.add_argument('--train-tgt-dict', type=str, default="data/train.BPE.de.json")
+parser.add_argument('--dev-src-dict', type=str, default="data/train.BPE.en.json")  # TODO: Accept train dictionary
+parser.add_argument('--dev-tgt-dict', type=str, default="data/train.BPE.de.json")  # TODO: Accept train dictionary
 parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
-parser.add_argument('--dev-src-dict', type=str, default="data/train.BPE.en.json")
-parser.add_argument('--dev-tgt-dict', type=str, default="data/train.BPE.de.json")
+# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
 parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
 parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
-parser.add_argument('--test-src-dict', type=str, default="data/train.BPE.en.json")
-parser.add_argument('--test-tgt-dict', type=str, default="data/train.BPE.de.json")
+parser.add_argument('--test-src-dict', type=str, default="data/train.BPE.en.json")  # TODO: Accept train dictionary
+parser.add_argument('--test-tgt-dict', type=str, default="data/train.BPE.de.json")  # TODO: Accept train dictionary
 parser.add_argument('--save-dir', type=str, default="save/")
 parser.add_argument('--checkpt-path', type=str, default="")
 # Hyperparameters: data
-parser.add_argument('-n', '--batch', type=int, default=4)
+parser.add_argument('-n', '--batch', type=int, default=32)
 # Hyperparameters: architecture
 parser.add_argument('-d', '--hidden-dim', type=int, default=512)
-# TODO
 parser.add_argument('-l', '--max-len', type=int, default=256)
 parser.add_argument('-h', '--num_heads', type=int, default=8)
 parser.add_argument('--enc-layers', type=int, default=6)
@@ -72,22 +74,20 @@ print(f"Device = {device}")
 
 if MODE == 'train':
     train_data = NMTData(args.train_src, args.train_tgt, args.train_src_dict, args.train_tgt_dict)
-    print(len(train_data))
     train_loader = DataLoader(train_data, batch_size=args.batch, shuffle=True, num_workers=0)
     dev_data = NMTData(args.dev_src, args.dev_tgt, args.dev_src_dict, args.dev_tgt_dict)
     dev_loader = DataLoader(dev_data, batch_size=args.batch, shuffle=False, num_workers=0)
-
+    print(f"Loaded {len(train_data)} training sentences and {len(dev_data)} development sentences.")
 else: # MODE == 'inference'
     test_data = NMTData(args.test_src, args.test_tgt, args.test_src_dict, args.test_tgt_dict)
     test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, num_workers=8)
+    print(f"Loaded {len(test_data)} test sentences.")
 
 subword_to_idx = json_to_dict(args.train_tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
 src_vocab_size = len(json_to_dict(args.train_src_dict))
 tgt_vocab_size = len(subword_to_idx)
 
-# TODO: HACK REMOVE
-# args.max_len = train_data.maxlen_target
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
@@ -128,10 +128,11 @@ else: # MODE == 'inference'
 # Run model
 if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
-    #TODO: HACK
-    train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model, epochs_left,
-          criterion, optimizer, scheduler=None, save_dir=args.save_dir, start_epoch=start_epoch, report_freq=0,
-          device=device)
+    train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model,
+          epochs_left, criterion, optimizer, scheduler, save_dir=args.save_dir, start_epoch=start_epoch,
+          report_freq=1, device=device)
 else: # MODE == 'inference'
-    bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, device='gpu')
-    print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")
+    # TODO
+    raise NotImplementedError("Yixin to update beam search method in model and eval_bleu function in train_test.py")
+    # bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, device='gpu')
+    # print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")
