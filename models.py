@@ -40,7 +40,8 @@ class TransformerModel(nn.Module):
             self.tgt_token_embedding = self.src_token_embedding
         else:
             self.tgt_token_embedding = nn.Embedding(tgt_vocab_size, hidden_dim)
-        self.position_embedding = nn.Embedding(max_len, hidden_dim)
+        # TODO: FIX HACK
+        self.position_embedding = nn.Embedding(512, hidden_dim)
         self.transformer = nn.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
                                           dropout=dropout, activation=activation)
@@ -53,7 +54,7 @@ class TransformerModel(nn.Module):
         else:
             token_embeddings = self.tgt_token_embedding(tokens)
         max_len = tokens.size(0)
-        position_idx = torch.arange(max_len).type_as(max_len) # (S, )
+        position_idx = torch.arange(max_len).type_as(tokens) # (S, )
         position_embeddings = self.position_embedding(position_idx) # (S, E)
         position_embeddings = position_embeddings.unsqueeze(1).expand(-1, tokens.size(1), -1)
         return token_embeddings + position_embeddings
@@ -61,8 +62,8 @@ class TransformerModel(nn.Module):
     def forward(self, src_tokens, tgt_tokens, src_mask=None, tgt_mask=None, memory_mask=None,
                 src_key_padding_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
         # tokens (S, N)
-        src_embeddings = self.embedding(src_tokens, side="src")
-        tgt_embeddings = self.embedding(src_tokens, side="tgt")
+        src_embeddings = self.embedding(src_tokens, side="src").transpose(0, 1)
+        tgt_embeddings = self.embedding(tgt_tokens, side="tgt").transpose(0, 1)
         output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                   src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                   memory_key_padding_mask=memory_key_padding_mask)

@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN
+from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
 from models import TransformerModel, init_weights
 from train_test import train, eval_bleu
 
@@ -15,26 +15,27 @@ from train_test import train, eval_bleu
 # System parameters
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('-i', '--inference', action='store_true')
+#TODO: Accept single dictionary
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
 parser.add_argument('--train-src-dict', type=str, default="data/train.BPE.en.json")
 parser.add_argument('--train-tgt-dict', type=str, default="data/train.BPE.de.json")
 parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
-parser.add_argument('--dev-src-dict', type=str, default="data/dev.BPE.en.json")
-parser.add_argument('--dev-tgt-dict', type=str, default="data/dev.BPE.de.json")
+parser.add_argument('--dev-src-dict', type=str, default="data/train.BPE.en.json")
+parser.add_argument('--dev-tgt-dict', type=str, default="data/train.BPE.de.json")
 parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
 parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
-parser.add_argument('--test-src-dict', type=str, default="data/test.BPE.en.json")
-parser.add_argument('--test-tgt-dict', type=str, default="data/test.BPE.de.json")
+parser.add_argument('--test-src-dict', type=str, default="data/train.BPE.en.json")
+parser.add_argument('--test-tgt-dict', type=str, default="data/train.BPE.de.json")
 parser.add_argument('--save-dir', type=str, default="save/")
 parser.add_argument('--checkpt-path', type=str, default="")
 # Hyperparameters: data
-parser.add_argument('-n', '--batch', type=int, default=256)
+parser.add_argument('-n', '--batch', type=int, default=4)
 # Hyperparameters: architecture
 parser.add_argument('-d', '--hidden-dim', type=int, default=512)
 # TODO
-# parser.add_argument('-l', '--max-len', type=int, default=512)
+parser.add_argument('-l', '--max-len', type=int, default=256)
 parser.add_argument('-h', '--num_heads', type=int, default=8)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
@@ -86,7 +87,7 @@ src_vocab_size = len(json_to_dict(args.train_src_dict))
 tgt_vocab_size = len(subword_to_idx)
 
 # TODO: HACK REMOVE
-args.max_len = train_data.maxlen_target
+# args.max_len = train_data.maxlen_target
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
@@ -96,7 +97,7 @@ model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.m
 model.to(device)
 
 if MODE == 'train':
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=PAD)
 
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -127,9 +128,10 @@ else: # MODE == 'inference'
 # Run model
 if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
+    #TODO: HACK
     train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model, epochs_left,
           criterion, optimizer, scheduler=None, save_dir=args.save_dir, start_epoch=start_epoch, report_freq=0,
-          device='gpu')
+          device=device)
 else: # MODE == 'inference'
     bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, device='gpu')
     print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")

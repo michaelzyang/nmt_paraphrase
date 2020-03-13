@@ -7,7 +7,7 @@ from data_processing import idxs_to_sentences
 
 
 def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
-          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='gpu'):
+          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='cpu'):
     """
     Training procedure, saving the model checkpoint after every epoch
     :param train_loader: training set dataloader
@@ -28,7 +28,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
         save_dir = save_dir + '/'
 
     model.train()
-    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len)
+    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
 
     print(f"Beginning training at {datetime.now()}")
     if start_epoch == 1:
@@ -47,10 +47,11 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
 
             # Update weights
             optimizer.zero_grad()
-            outputs = model(src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
-                            src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
+            outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+                            src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask[:, 1:],
                             memory_key_padding_mask=src_key_padding_mask)
-            loss = criterion(outputs, tgt_tokens.long())
+            outputs = outputs.transpose(0, 1).transpose(1, 2)
+            loss = criterion(outputs, tgt_tokens[:, 1:].long())
             loss.backward()
             optimizer.step()
 
