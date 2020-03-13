@@ -49,9 +49,17 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
 
+            # Send zero masks to the correct device
+            if batch_num == 0:
+                S, T = max_len, max_len - 1
+                src_mask = torch.zeros((S, S))
+                memory_mask = torch.zeros((T, S))
+                src_mask = src_mask.to(device)
+                memory_mask = memory_mask.to(device)
+
             # Update weights
             optimizer.zero_grad()
-            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                 src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                 memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
             loss.backward()
