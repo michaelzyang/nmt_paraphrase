@@ -27,17 +27,19 @@ parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
 # parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
 # parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
-parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
-parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+# parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
+# parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+parser.add_argument('--test-src', type=str, default="data/train_small.BPE.en")
+parser.add_argument('--test-tgt', type=str, default="data/train_small.BPE.de")
 parser.add_argument('--test-src-dict', type=str, default="data/train.BPE.en.json")  # TODO: Accept train dictionary
 parser.add_argument('--test-tgt-dict', type=str, default="data/train.BPE.de.json")  # TODO: Accept train dictionary
 parser.add_argument('--save-dir', type=str, default="save/")
-parser.add_argument('--checkpt-path', type=str, default="")
+# parser.add_argument('--checkpt-path', type=str, default=None)
 # Hyperparameters: data
 parser.add_argument('-n', '--batch', type=int, default=32)
 # Hyperparameters: architecture
 parser.add_argument('-d', '--hidden-dim', type=int, default=512)
-parser.add_argument('-l', '--max-len', type=int, default=256)
+parser.add_argument('-l', '--max-len', type=int, default=512)
 parser.add_argument('-h', '--num_heads', type=int, default=8)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
@@ -45,16 +47,17 @@ parser.add_argument('-f', '--dim-feedforward', type=int, default=2048)
 parser.add_argument('-p', '--dropout', type=float, default=0.1)
 parser.add_argument('-a', '--activation', type=str, default='relu', choices=['relu'])
 # Hyperparameters: training
-parser.add_argument('-e', '--epochs', type=int, default=50)
+parser.add_argument('-e', '--epochs', type=int, default=100)
 # Hyperparameters: optimization
 parser.add_argument('-o', '--optimizer', type=str, default='adam', choices=['adam', 'sgd'])
-parser.add_argument('--lr', type=float, default=1e-3)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--scheduler', type=str, default='plateau', choices=['none', 'plateau'])
 # Hyperparameters: regularization
 parser.add_argument('--weight-decay', type=float, default=0.0)
 # Hyperparameters: inference
 parser.add_argument('-b', '--beam_size', type=int, default=5)
+parser.add_argument('--checkpt_path', type=str, default=None)
 
 args = parser.parse_args()
 MODE = 'inference' if args.inference else 'train'
@@ -100,7 +103,7 @@ if MODE == 'train':
     criterion = nn.CrossEntropyLoss(ignore_index=PAD)
 
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     elif args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     else:
@@ -130,9 +133,9 @@ if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
     train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model,
           epochs_left, criterion, optimizer, scheduler, save_dir=args.save_dir, start_epoch=start_epoch,
-          report_freq=1, device=device)
+          report_freq=100, device=device)
 else: # MODE == 'inference'
     # TODO
-    raise NotImplementedError("Yixin to update beam search method in model and eval_bleu function in train_test.py")
-    # bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, device='gpu')
-    # print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")
+    # raise NotImplementedError("Yixin to update beam search method in model and eval_bleu function in train_test.py")
+    bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2), args.beam_size, device=device)
+    print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")

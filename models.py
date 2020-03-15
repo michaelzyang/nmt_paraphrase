@@ -41,7 +41,7 @@ class TransformerModel(nn.Module):
         else:
             self.tgt_token_embedding = nn.Embedding(tgt_vocab_size, hidden_dim)
         # TODO: FIX HACK
-        self.position_embedding = nn.Embedding(512, hidden_dim)
+        self.position_embedding = nn.Embedding(max_len, hidden_dim)
         self.transformer = nn.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
                                           dropout=dropout, activation=activation)
@@ -49,6 +49,7 @@ class TransformerModel(nn.Module):
 
     def embedding(self, tokens, side="src"):
         # tokens (S, N)
+        tokens = tokens.transpose(0, 1)
         if side == "src":
             token_embeddings = self.src_token_embedding(tokens)
         else:
@@ -62,8 +63,8 @@ class TransformerModel(nn.Module):
     def forward(self, src_tokens, tgt_tokens, src_mask=None, tgt_mask=None, memory_mask=None,
                 src_key_padding_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
         # tokens (S, N)
-        src_embeddings = self.embedding(src_tokens, side="src").transpose(0, 1)
-        tgt_embeddings = self.embedding(tgt_tokens, side="tgt").transpose(0, 1)
+        src_embeddings = self.embedding(src_tokens, side="src")
+        tgt_embeddings = self.embedding(tgt_tokens, side="tgt")
         output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                   src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                   memory_key_padding_mask=memory_key_padding_mask)
@@ -74,28 +75,33 @@ class TransformerModel(nn.Module):
         """ greedy decoding """
         src_embeddings = self.embedding(src_tokens, side="src")
         src_encoding = self.transformer.encoder(src_embeddings, src_key_padding_mask=src_key_padding_mask)
-        tgt_tokens = [sos_token]
+        sos_token = torch.ones(1).long().type_as(src_tokens) * sos_token
+        tgt_tokens = [sos_token.expand(src_tokens.size(0))]
         for i in range(max_len):
-            tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=0), side="tgt")
-            output = self.transformer.decoder(tgt_embeddings, src_encoding, memory_key_padding_mask=src_key_padding_mask) # (T, N, V)
+            tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=1), side="tgt")
+            tgt_mask = self.transformer.generate_square_subsequent_mask(sz=tgt_embeddings.size(0)).type_as(tgt_embeddings)
+            output = self.transformer.decoder(tgt_embeddings, src_encoding, tgt_mask=tgt_mask, memory_key_padding_mask=src_key_padding_mask) # (T, N, V)
+            output = self.linear(output)
             next_logits = output[-1]  # (N, V) logits of the last predicted word
             _, words = torch.max(next_logits, dim=1)  # highest likelihood word (indices)
             tgt_tokens.append(words)
             # TODO return if <eos> predicted
-        return torch.stack(tgt_tokens[1:], dim=0).cpu().numpy().tolist()
+        return torch.stack(tgt_tokens[1:], dim=1).cpu().numpy().tolist()
 
     def beam_search(self, src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size=5):
         topk = []
         probs = []
         src_embeddings = self.embedding(src_tokens, side="src")
         src_encoding = self.transformer.encoder(src_embeddings, src_key_padding_mask=src_key_padding_mask)
+        sos_token = torch.ones(1).long().type_as(src_tokens) * sos_token
         tgt_tokens = [sos_token]
         for i in range(max_len):
             if i == 0:
-                tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=0), side="tgt")
+                tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=1), side="tgt")
                 output = self.transformer.decoder(tgt_embeddings, src_encoding, memory_key_padding_mask=src_key_padding_mask)
+                output = self.linear(output)
                 next_logits = output[-1]  # (N, V) logits of the last predicted word
-                result = F.log_softmax(next_logits, 1)
+                result = F.log_softmax(next_logits, dim=1)
                 probs, idxs = torch.topk(result, beam_size, dim=1)
 
                 for j in range(beam_size):
@@ -106,17 +112,18 @@ class TransformerModel(nn.Module):
                     if topk[j].is_end():
                         candidates.append(topk[j])
                     else:
-                        tgt_embeddings = self.embedding(torch.stack(topk[j].tokens, dim=0), side="tgt")
+                        tgt_embeddings = self.embedding(torch.stack(topk[j].tokens, dim=1), side="tgt")
                         output = self.transformer.decoder(tgt_embeddings, src_encoding, memory_key_padding_mask=src_key_padding_mask)
+                        output = self.linear(output)
                         next_logits = output[-1]
-                        result = F.log_softmax(next_logits, 1)
+                        result = F.log_softmax(next_logits, dim=1)
                         probs, idxs = torch.topk(result, beam_size, dim=1)
 
                         for q in range(beam_size):
                             candidates.append(topk[j].update(idxs[:, q], probs[:, q].item()))
                 candidates = sorted(candidates, key=lambda x: x.score, reverse=True)
                 topk = [candidates[_] for _ in range(beam_size)]
-        return torch.stack(topk[0].tokens[1:], dim=0).cpu().numpy().tolist(), topk[0].score
+        return torch.stack(topk[0].tokens[1:], dim=1).cpu().numpy().tolist(), topk[0].score
 
 
 

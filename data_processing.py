@@ -32,17 +32,21 @@ class NMTData(Dataset):
         source_dict = json_to_dict(SRC_DICT)
         target_dict = json_to_dict(TGT_DICT)
 
+        # now_maxlen_source, now_maxlen_target = 0, 0
+        self.maxlen_source = 256
+        self.maxlen_target = 256
         for item in read_dataset(SOURCE, TARGET, source_dict, target_dict):
             # self.maxlen_source = max(self.maxlen_source, len(item[0]))
             # self.maxlen_target = max(self.maxlen_target, len(item[1]))
-            self.maxlen_source = 256
-            self.maxlen_target = 256
-            self.source.append(item[0])
-            self.target.append(item[1])
+            # now_maxlen_source = max(now_maxlen_source, len(item[0]))
+            # now_maxlen_target = max(now_maxlen_target, len(item[1]))
+            self.source.append(item[0][:self.maxlen_source])
+            self.target.append(item[1][:self.maxlen_target])
             self.length += 1
 
         for i in range(len(self.source)):
             diff = self.maxlen_source - len(self.source[i])
+            # diff = now_maxlen_source - len(self.source[i])
             assert diff>=0
             mask = list()
             mask += [False] * len(self.source[i])
@@ -52,6 +56,7 @@ class NMTData(Dataset):
 
         for i in range(len(self.target)):
             diff = self.maxlen_target - len(self.target[i])
+            # diff = now_maxlen_target - len(self.target[i])
             assert diff>=0
             mask = list()
             mask += [False] * len(self.target[i])
@@ -59,16 +64,16 @@ class NMTData(Dataset):
             mask += [True] * diff
             self.target_mask.append(mask)
 
-        self.source = torch.from_numpy(np.asarray(self.source))
-        self.target = torch.from_numpy(np.asarray(self.target))
-        self.source_mask = torch.BoolTensor(self.source_mask)
-        self.target_mask = torch.BoolTensor(self.target_mask)
+        # self.source = torch.from_numpy(np.asarray(self.source))
+        # self.target = torch.from_numpy(np.asarray(self.target))
+        # self.source_mask = torch.BoolTensor(self.source_mask)
+        # self.target_mask = torch.BoolTensor(self.target_mask)
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, index):
-        return self.source[index], self.source_mask[index], self.target[index], self.target_mask[index]
+        return torch.LongTensor(self.source[index]), torch.BoolTensor(self.source_mask[index]), torch.LongTensor(self.target[index]), torch.BoolTensor(self.target_mask[index])
 
 
 def idxs_to_sentences(tgt_list, tgt_vocab):
@@ -81,7 +86,13 @@ def idxs_to_sentences(tgt_list, tgt_vocab):
     sentences = list()
 
     for sentence in tgt_list:
-        sent = [tgt_vocab.get(x) for x in sentence]
-        sentences.append(' '.join(sent))
+        sent = []
+        for x in sentence:
+            if x == SOS_TOKEN:
+                continue
+            if x == EOS_TOKEN:
+                break
+            sent.append(tgt_vocab.get(x))
+        sentences.append(' '.join(sent).replace("@@ ", ""))
 
     return sentences

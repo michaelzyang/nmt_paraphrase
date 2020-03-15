@@ -33,8 +33,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
         save_dir = save_dir + '/'
 
     model.train()
-    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
-    tgt_mask = tgt_mask.to(device)
+    # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
+    # tgt_mask = tgt_mask.to(device)
 
     print(f"Beginning training at {datetime.now()}")
     if start_epoch == 1:
@@ -49,6 +49,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+            tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
+            tgt_mask = tgt_mask.to(device)
 
             # Update weights
             optimizer.zero_grad()
@@ -56,6 +58,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
                                 src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                 memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 5)
             optimizer.step()
 
             # Accumulate loss for reporting
@@ -85,7 +88,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             'optimizer_state_dict': optimizer.state_dict(),
             'dev_loss': dev_loss
         }
-        torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
+        if epoch == n_epochs - 1:
+            torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
     print(f"Finished training at {datetime.now()}")
 
 
@@ -100,7 +104,7 @@ def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
     :return: The average loss per sentence
     """
     model.eval()
-    tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
+    # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
     loss_accum = 0.0
     batch_count = 0
 
@@ -109,6 +113,8 @@ def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+            tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
+            tgt_mask = tgt_mask.to(device)
 
             loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
                                 src_key_padding_mask=src_key_padding_mask,
@@ -125,7 +131,7 @@ def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
     return loss_accum / batch_count
 
 
-def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, device='gpu'):
+def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1, device='gpu'):
     """
     Evaluates the BLEU score of the model on a given dataset
     :param model: The model being evaluated
@@ -144,23 +150,27 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     refs = []
 
     with torch.no_grad():
-        for batch in data_loader:
+        for (i, batch) in enumerate(data_loader):
+            if i > 10:
+                break
             src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
-
-            hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
+            if beam_size == 1:
+                hyp_batch = model.inference(src_tokens, src_key_padding_mask, sos_token, max_len)
+            else:
+                hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
+            hyp_batch = idxs_to_sentences(hyp_batch, idx_to_subword)
             hyps.extend(hyp_batch)  # [N]
-
-            ref_batch = idxs_to_sentences(tgt_tokens, idx_to_subword)  # list of single-element lists
+            ref_batch = idxs_to_sentences(tgt_tokens.cpu().numpy().tolist(), idx_to_subword)  # list of single-element lists
             refs.extend(ref_batch)
 
             torch.cuda.empty_cache()
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
-
     model.train()
-
-    bleu = sacrebleu.corpus_bleu(hyps, refs)
+    print(hyps[:5])
+    print(refs[:5])
+    bleu = sacrebleu.corpus_bleu(hyps, [refs])
     return bleu.score
 
 
@@ -170,7 +180,7 @@ def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask,
     # shift tgt_key_padding_mask left by one position for the same reason (the eos tag will end up being masked out
     outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                     src_key_padding_mask=src_key_padding_mask,
-                    tgt_key_padding_mask=tgt_key_padding_mask[:, 1:],
+                    tgt_key_padding_mask=tgt_key_padding_mask[:, :-1],
                     memory_key_padding_mask=memory_key_padding_mask)
     outputs = outputs.transpose(0, 1).transpose(1, 2)
     loss = criterion(outputs, tgt_tokens[:, 1:].long())
