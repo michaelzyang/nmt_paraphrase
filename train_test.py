@@ -88,8 +88,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             'optimizer_state_dict': optimizer.state_dict(),
             'dev_loss': dev_loss
         }
-        if epoch == n_epochs - 1:
-            torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
+        torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
     print(f"Finished training at {datetime.now()}")
 
 
@@ -159,6 +158,7 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
             if beam_size == 1:
                 hyp_batch = model.inference(src_tokens, src_key_padding_mask, sos_token, max_len)
             else:
+                # only suuports batch size 1
                 hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
             hyp_batch = idxs_to_sentences(hyp_batch, idx_to_subword)
             hyps.extend(hyp_batch)  # [N]

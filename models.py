@@ -89,6 +89,7 @@ class TransformerModel(nn.Module):
         return torch.stack(tgt_tokens[1:], dim=1).cpu().numpy().tolist()
 
     def beam_search(self, src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size=5):
+        # now only supports batch size 1
         topk = []
         probs = []
         src_embeddings = self.embedding(src_tokens, side="src")
