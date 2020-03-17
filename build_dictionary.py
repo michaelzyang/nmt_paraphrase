@@ -31,7 +31,7 @@ def main():
         worddict['<UNK>'] = 3
         # FIXME We shouldn't assume <EOS>, <SOS>, and <UNK> aren't BPE subwords.
         for ii, ww in enumerate(sorted_words):
-            worddict[ww] = ii+3
+            worddict[ww] = ii+4
 
         # The JSON RFC requires that JSON text be represented using either
         # UTF-8, UTF-16, or UTF-32, with UTF-8 being recommended.
