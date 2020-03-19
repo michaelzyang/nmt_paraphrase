@@ -44,26 +44,26 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     # Train epochs
     all_step_cnt = 0
     warmup_steps = 4000
+    # eval_loss(model, dev_loader, max_len, criterion, device)
     for epoch in range(start_epoch, n_epochs + 1):
         avg_loss = 0.0  # for accumulating loss per reporting cycle over batches
         step_cnt = 0
         for batch_num, batch in enumerate(train_loader):
             # Unpack batch objects
-            src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
-            max_src_len = torch.max(src_lens)
-            src_tokens, src_key_padding_mask = src_tokens[:, :max_src_len], src_key_padding_mask[:, :max_src_len]
-            max_tgt_len = torch.max(tgt_lens)
-            tgt_tokens, tgt_key_padding_mask = tgt_tokens[:, :max_tgt_len], tgt_key_padding_mask[:, :max_tgt_len]
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
+            src_tokens = src_tokens[:, :torch.max(src_key_padding_mask)]
+            tgt_tokens = tgt_tokens[:, :torch.max(tgt_key_padding_mask)]
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
-            tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
-            tgt_mask = tgt_mask.to(device)
+            # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
+            # tgt_mask = tgt_mask.to(device)
 
             # Update weights
             # optimizer.zero_grad()
-            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
-                                src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
-                                memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
+            loss = compute_loss(model, src_tokens, src_key_padding_mask, tgt_tokens, criterion)
+            # loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+            #                     src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
+            #                     memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
             loss_ = loss / 4
             loss_.backward()
             # nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -126,20 +126,19 @@ def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
 
     with torch.no_grad():
         for batch in data_loader:
-            src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
-            max_src_len = torch.max(src_lens)
-            src_tokens, src_key_padding_mask = src_tokens[:, :max_src_len], src_key_padding_mask[:, :max_src_len]
-            max_tgt_len = torch.max(tgt_lens)
-            tgt_tokens, tgt_key_padding_mask = tgt_tokens[:, :max_tgt_len], tgt_key_padding_mask[:, :max_tgt_len]
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
+            src_tokens = src_tokens[:, :torch.max(src_key_padding_mask)]
+            tgt_tokens = tgt_tokens[:, :torch.max(tgt_key_padding_mask)]
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
-            tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
-            tgt_mask = tgt_mask.to(device)
+            # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=tgt_tokens.size(1) - 1)
+            # tgt_mask = tgt_mask.to(device)
 
-            loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
-                                src_key_padding_mask=src_key_padding_mask,
-                                tgt_key_padding_mask=tgt_key_padding_mask,
-                                memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
+            # loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
+            #                     src_key_padding_mask=src_key_padding_mask,
+            #                     tgt_key_padding_mask=tgt_key_padding_mask,
+            #                     memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
+            loss = compute_loss(model, src_tokens, src_key_padding_mask, tgt_tokens, criterion)
             loss_accum += loss
             batch_count += 1
 
@@ -173,11 +172,7 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
         for (i, batch) in enumerate(data_loader):
             if i > 10:
                 break
-            src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
-            max_src_len = torch.max(src_lens)
-            src_tokens, src_key_padding_mask = src_tokens[:, :max_src_len], src_key_padding_mask[:, :max_src_len]
-            max_tgt_len = torch.max(tgt_lens)
-            tgt_tokens, tgt_key_padding_mask = tgt_tokens[:, :max_tgt_len], tgt_key_padding_mask[:, :max_tgt_len]
+            src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask = batch
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
             if beam_size == 1:
@@ -199,14 +194,11 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     return bleu.score
 
 
-def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,
-                 tgt_key_padding_mask, memory_key_padding_mask, criterion):
+def compute_loss(model, src_tokens, src_lengths, tgt_tokens, criterion):
     # drop last token for tgt_tokens input as decoder at each time step should attend to all tokens up to prev token
     # shift tgt_key_padding_mask left by one position for the same reason (the eos tag will end up being masked out
-    outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
-                    src_key_padding_mask=src_key_padding_mask,
-                    tgt_key_padding_mask=tgt_key_padding_mask[:, :-1],
-                    memory_key_padding_mask=memory_key_padding_mask)
-    outputs = outputs.transpose(0, 1).transpose(1, 2)
+    outputs = model(src_tokens=src_tokens, src_lengths=src_lengths, prev_output_tokens=tgt_tokens[:, :-1])
+    outputs = outputs[0]
+    outputs = outputs.transpose(1, 2)
     loss = criterion(outputs, tgt_tokens[:, 1:].long())
     return loss
