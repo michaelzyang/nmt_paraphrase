@@ -102,7 +102,7 @@ def idxs_to_sentences(tgt_list, tgt_vocab, unsplit=True):
 
         sentence_string = ' '.join(sent)  # join BPE subword tokens into a string
         if unsplit:
-            sentence_string.replace('@@ ', '')  # unsplit BPE subwords into full words
+            sentence_string = sentence_string.replace('@@ ', '')  # unsplit BPE subwords into full words
         sentences.append(sentence_string)
 
     return sentences

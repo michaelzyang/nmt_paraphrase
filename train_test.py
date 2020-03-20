@@ -203,7 +203,7 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     for i in idxs:
         i_str = str(i).zfill(4)
         print(f"ref {i_str}: {refs[i][0]}")
-        print(f"hyp {i_str}: {hyps[i]}")
+        print(f"hyp {i_str}: {hyps[i]}\n")
 
     bleu = sum([sentence_bleu(hyp, ref) for hyp, ref in zip(hyps, refs)]) / n_sequences
     bleu *= 100
