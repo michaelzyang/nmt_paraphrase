@@ -190,7 +190,6 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
 
             # Produce references
             ref_batch = idxs_to_sentences(tgt_tokens.cpu().numpy().tolist(), idx_to_subword, unsplit=True)
-            ref_batch = [[ref] for ref in ref_batch]  # [[str]]  bleu functions expect [str] input for ref
             refs.extend(ref_batch)
 
             torch.cuda.empty_cache()
@@ -202,12 +201,13 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     idxs = np.random.choice(n_sequences, 5, replace=False)
     for i in idxs:
         i_str = str(i).zfill(4)
-        print(f"ref {i_str}: {refs[i][0]}")
+        print(f"ref {i_str}: {refs[i]}")
         print(f"hyp {i_str}: {hyps[i]}\n")
 
-    bleu = sum([sentence_bleu(hyp, ref) for hyp, ref in zip(hyps, refs)]) / n_sequences
+    # bleu = sacrebleu.corpus_bleu(hyps, [refs]).score  # sacrebleu expects untokenized input (not Moses tokenized input)
+
+    bleu = sum([sentence_bleu(hyp.split(), [ref.split()]) for hyp, ref in zip(hyps, refs)]) / n_sequences
     bleu *= 100
-    # bleu = sacrebleu.corpus_bleu(hyps, refs).score  # sacrebleu expects untokenized input (not Moses tokenized input)
     return bleu
 
 

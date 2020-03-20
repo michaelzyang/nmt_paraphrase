@@ -24,16 +24,15 @@ parser.add_argument('--tgt-dict', type=str, default="data/train.BPE.de.json")
 
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
-# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
-
 parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
-# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
-
 parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
 parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+
+# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
+# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
 # parser.add_argument('--test-src', type=str, default="data/train_small.BPE.en")
 # parser.add_argument('--test-tgt', type=str, default="data/train_small.BPE.de")
 
