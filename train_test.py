@@ -206,6 +206,7 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
         print(f"hyp {i_str}: {hyps[i]}")
 
     bleu = sum([sentence_bleu(hyp, ref) for hyp, ref in zip(hyps, refs)]) / n_sequences
+    bleu *= 100
     # bleu = sacrebleu.corpus_bleu(hyps, refs).score  # sacrebleu expects untokenized input (not Moses tokenized input)
     return bleu
 
