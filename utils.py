@@ -14,6 +14,7 @@ def check_save_dir(save_dir):
                 done = True
             elif mkdir_save == 'n':
                 save_dir = input("Enter new save directory: ")
+                continue
             elif mkdir_save == 'e':
                 sys.exit()
             else:
