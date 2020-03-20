@@ -171,7 +171,7 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     with torch.no_grad():
         for (i, batch) in enumerate(data_loader):
             if i > 10:
-                break
+                break  # TODO DELETE HACK
             src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
             max_src_len = torch.max(src_lens)
             src_tokens, src_key_padding_mask = src_tokens[:, :max_src_len], src_key_padding_mask[:, :max_src_len]

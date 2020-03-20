@@ -19,22 +19,19 @@ parser.add_argument('--save-dir', type=str, default="save/")
 parser.add_argument('--checkpt-path', type=str, default=None)
 
 # Data files
-parser.add_argument('--train-src-dict', type=str, default="data/train.BPE.en.json")
-parser.add_argument('--train-tgt-dict', type=str, default="data/train.BPE.de.json")
+parser.add_argument('--src-dict', type=str, default="data/train.BPE.en.json")
+parser.add_argument('--tgt-dict', type=str, default="data/train.BPE.de.json")
+
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
 # parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
 # parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
 
-parser.add_argument('--dev-src-dict', type=str, default="data/train.BPE.en.json")  # TODO: Accept train dictionary
-parser.add_argument('--dev-tgt-dict', type=str, default="data/train.BPE.de.json")  # TODO: Accept train dictionary
 parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
 # parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
 # parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
 
-parser.add_argument('--test-src-dict', type=str, default="data/train.BPE.en.json")  # TODO: Accept train dictionary
-parser.add_argument('--test-tgt-dict', type=str, default="data/train.BPE.de.json")  # TODO: Accept train dictionary
 parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
 parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
 # parser.add_argument('--test-src', type=str, default="data/train_small.BPE.en")
@@ -58,12 +55,10 @@ parser.add_argument('-e', '--epochs', type=int, default=100)
 
 # Hyperparameters: optimization
 parser.add_argument('-o', '--optimizer', type=str, default='adam', choices=['adam', 'sgd'])
+parser.add_argument('--weight-decay', type=float, default=0.0001)
 parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--scheduler', type=str, default='none', choices=['none', 'plateau'])
-
-# Hyperparameters: regularization
-parser.add_argument('--weight-decay', type=float, default=0.0001)
 
 # Hyperparameters: inference
 parser.add_argument('-b', '--beam_size', type=int, default=5)
@@ -85,7 +80,7 @@ print(f"Device = {device}")
 # TODO Determine whether label smoothing occurs here or in the train loop
 
 if MODE == 'train':
-    train_data = NMTData(args.train_src, args.train_tgt, args.train_src_dict, args.train_tgt_dict)
+    train_data = NMTData(args.train_src, args.train_tgt, args.src_dict, args.tgt_dict)
     train_loader = DataLoader(train_data, batch_size=args.batch, shuffle=True, num_workers=0)
     dev_data = NMTData(args.dev_src, args.dev_tgt, args.dev_src_dict, args.dev_tgt_dict)
     dev_loader = DataLoader(dev_data, batch_size=args.batch, shuffle=False, num_workers=0)
@@ -95,9 +90,9 @@ else: # MODE == 'inference'
     test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, num_workers=8)
     print(f"Loaded {len(test_data)} test sentences.")
 
-subword_to_idx = json_to_dict(args.train_tgt_dict)
+subword_to_idx = json_to_dict(args.tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
-src_vocab_size = len(json_to_dict(args.train_src_dict))
+src_vocab_size = len(json_to_dict(args.src_dict))
 tgt_vocab_size = len(subword_to_idx)
 print(src_vocab_size)
 print(tgt_vocab_size)
