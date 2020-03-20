@@ -25,11 +25,11 @@ class NMTData(Dataset):
         self.target = list()
         self.source_mask = list()
         self.target_mask = list()
-        self.src_len = list()
-        self.tgt_len = list()
         self.maxlen_source = 0
         self.maxlen_target = 0
         self.length = 0
+        self.src_len = list()
+        self.tgt_len = list()
 
         source_dict = json_to_dict(SRC_DICT)
         target_dict = json_to_dict(TGT_DICT)
@@ -77,7 +77,7 @@ class NMTData(Dataset):
         return self.length
 
     def __getitem__(self, index):
-        return torch.LongTensor(self.source[index]), torch.BoolTensor(self.source_mask[index]), torch.LongTensor([self.src_len[index]]), torch.LongTensor(self.target[index]), torch.BoolTensor(self.target_mask[index]), torch.LongTensor([self.tgt_len[index]])
+        return torch.LongTensor(self.source[index]), torch.LongTensor([self.src_len[index]]), torch.LongTensor(self.target[index]), torch.LongTensor([self.tgt_len[index]])
 
 
 def idxs_to_sentences(tgt_list, tgt_vocab):

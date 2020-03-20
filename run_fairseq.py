@@ -6,10 +6,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
-from models import TransformerModel, init_weights
-from train_test import train, eval_loss, eval_bleu
-
+from data_processing_fairseq import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
+# from models import TransformerModel, init_weights
+from train_test_fairseq import train, eval_loss, eval_bleu
+from fairseq.models.transformer import TransformerModel, transformer_iwslt_de_en
 
 # ======================= Set Up Environment ======================= #
 # System parameters
@@ -95,9 +95,35 @@ print(tgt_vocab_size)
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
-model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
-                         args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
-                         weight_tie=False)
+# model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
+#                          args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
+#                          weight_tie=False)
+class Dictionary():
+    def __init__(self, path):
+        self.subword_to_idx = json_to_dict(path)
+        
+    def __len__(self):
+        return len(self.subword_to_idx)
+
+    def pad(self):
+        return subword_to_idx["<PAD>"]
+    
+class Task():
+    def __init__(self, source_dictionary, target_dictionary):
+        self.source_dictionary = source_dictionary
+        self.target_dictionary = target_dictionary
+
+task = Task(Dictionary(args.train_src_dict), Dictionary(args.train_tgt_dict))
+model_parser = argparse.ArgumentParser(add_help=False)
+model_args = model_parser.parse_args()
+transformer_iwslt_de_en(model_args)
+model_args.encoder_layers_to_keep = getattr(model_args, "encoder_layers_to_keep", None)
+model_args.decoder_layers_to_keep = getattr(model_args, "decoder_layers_to_keep", None)
+model_args.encoder_layerdrop = getattr(model_args, "encoder_layerdrop", 0)
+model_args.decoder_layerdrop = getattr(model_args, "decoder_layerdrop", 0)
+model_args.dropout = 0.3
+print(model_args)
+model = TransformerModel.build_model(model_args, task)
 model.to(device)
 
 if MODE == 'train':

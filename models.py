@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-
+import math
 
 def init_weights(m):
     raise NotImplementedError
@@ -32,7 +32,7 @@ class BeamCandidate():
 class TransformerModel(nn.Module):
     """ Transformer Model """
     def __init__(self, src_vocab_size, tgt_vocab_size, hidden_dim, max_len, nhead, num_encoder_layers=6,
-                 num_decoder_layers=6, dim_feedforward=2048, dropout=0.1, activation='relu', weight_tie=True):
+                 num_decoder_layers=6, dim_feedforward=2048, dropout=0.1, activation='relu', weight_tie=True, sinusoidal=True):
         super(TransformerModel, self).__init__()
         self.src_token_embedding = nn.Embedding(src_vocab_size, hidden_dim)
         if weight_tie == True:
@@ -41,11 +41,23 @@ class TransformerModel(nn.Module):
         else:
             self.tgt_token_embedding = nn.Embedding(tgt_vocab_size, hidden_dim)
         # TODO: FIX HACK
-        self.position_embedding = nn.Embedding(max_len, hidden_dim)
+        # self.position_embedding = nn.Embedding(max_len, hidden_dim)
+        if sinusoidal:
+            self.position_embedding = PositionalEncoding(hidden_dim, dropout, max_len)
+        else:
+            self.position_embedding = nn.Embedding(max_len, hidden_dim)
         self.transformer = nn.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
                                           dropout=dropout, activation=activation)
         self.linear = nn.Linear(hidden_dim, tgt_vocab_size)
+        self.sinusoidal = sinusoidal
+
+    def _reset_parameters(self):
+        r"""Initiate parameters in the transformer model."""
+
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def embedding(self, tokens, side="src"):
         # tokens (S, N)
@@ -54,11 +66,14 @@ class TransformerModel(nn.Module):
             token_embeddings = self.src_token_embedding(tokens)
         else:
             token_embeddings = self.tgt_token_embedding(tokens)
-        max_len = tokens.size(0)
-        position_idx = torch.arange(max_len).type_as(tokens) # (S, )
-        position_embeddings = self.position_embedding(position_idx) # (S, E)
-        position_embeddings = position_embeddings.unsqueeze(1).expand(-1, tokens.size(1), -1)
-        return token_embeddings + position_embeddings
+        if self.sinusoidal:
+            return self.position_embedding(token_embeddings * math.sqrt(token_embeddings.size(2)))
+        else:
+            max_len = tokens.size(0)
+            position_idx = torch.arange(max_len).type_as(tokens) # (S, )
+            position_embeddings = self.position_embedding(position_idx) # (S, E)
+            position_embeddings = position_embeddings.unsqueeze(1).expand(-1, tokens.size(1), -1)
+            return token_embeddings + 0.1 * position_embeddings
         
     def forward(self, src_tokens, tgt_tokens, src_mask=None, tgt_mask=None, memory_mask=None,
                 src_key_padding_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
@@ -68,6 +83,7 @@ class TransformerModel(nn.Module):
         output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                   src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                   memory_key_padding_mask=memory_key_padding_mask)
+        # output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask)
         # (T, N, E)
         return self.linear(output) # (T, N, V)
 
@@ -127,6 +143,47 @@ class TransformerModel(nn.Module):
         return torch.stack(topk[0].tokens[1:], dim=1).cpu().numpy().tolist(), topk[0].score
 
 
+# Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
+class PositionalEncoding(nn.Module):
+    r"""Inject some information about the relative or absolute position of the tokens
+        in the sequence. The positional encodings have the same dimension as
+        the embeddings, so that the two can be summed. Here, we use sine and cosine
+        functions of different frequencies.
+    .. math::
+        \text{PosEncoder}(pos, 2i) = sin(pos/10000^(2i/d_model))
+        \text{PosEncoder}(pos, 2i+1) = cos(pos/10000^(2i/d_model))
+        \text{where pos is the word position and i is the embed idx)
+    Args:
+        d_model: the embed dim (required).
+        dropout: the dropout value (default=0.1).
+        max_len: the max. length of the incoming sequence (default=5000).
+    Examples:
+        >>> pos_encoder = PositionalEncoding(d_model)
+    """
 
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
 
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [sequence length, batch size, embed dim]
+            output: [sequence length, batch size, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
 
