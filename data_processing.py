@@ -80,11 +80,13 @@ class NMTData(Dataset):
         return torch.LongTensor(self.source[index]), torch.BoolTensor(self.source_mask[index]), torch.LongTensor([self.src_len[index]]), torch.LongTensor(self.target[index]), torch.BoolTensor(self.target_mask[index]), torch.LongTensor([self.tgt_len[index]])
 
 
-def idxs_to_sentences(tgt_list, tgt_vocab):
+def idxs_to_sentences(tgt_list, tgt_vocab, unsplit=True):
     """
-    Given a tensor of a batch of token indices, return the list of sentences
-    :param tgt_tokens: (N, T)
-    :param tgt_vocab: {idx: BPE subword}
+    Given a tensor of a batch of BPE subword indices, return the list of sentences, where each sentence
+    is a string of subwords or full words if unsplit is set to True
+    :param tgt_list: (N, T)
+    :param tgt_vocab: target language vocabulary {idx: BPE subword}
+    :param unsplit: whether to unsplit BPE subwords into full words
     :return: [str]
     """
     sentences = list()
@@ -97,6 +99,10 @@ def idxs_to_sentences(tgt_list, tgt_vocab):
             if x == EOS_TOKEN:
                 break
             sent.append(tgt_vocab.get(x))
-        sentences.append(' '.join(sent).replace("@@ ", ""))
+
+        sentence_string = ' '.join(sent)  # join BPE subword tokens into a string
+        if unsplit:
+            sentence_string.replace('@@ ', '')  # unsplit BPE subwords into full words
+        sentences.append(sentence_string)
 
     return sentences
