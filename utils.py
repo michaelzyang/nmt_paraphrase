@@ -3,18 +3,32 @@ import torch
 
 
 def check_save_dir(save_dir):
-    if not os.path.exists(save_dir):
-        while not os.path.exists(save_dir):
+    done = False
+    while not done:
+        #  Make sure save_dir exists
+        if not os.path.exists(save_dir):
             print(f"Save directory {save_dir} does not exist.")
             mkdir_save = input("Do you wish to create the directory [m], enter a different directory [n], or exit [e]? ")
             if mkdir_save == 'm':
                 os.makedirs(save_dir)
+                done = True
             elif mkdir_save == 'n':
                 save_dir = input("Enter new save directory: ")
             elif mkdir_save == 'e':
                 sys.exit()
             else:
                 print("Please enter one of [m, n, e]")
+
+        #  Ensure user knows if save_dir is not empty
+        if os.listdir(save_dir):
+            use_save_dir = input(f"Save directory {save_dir} is not empty. Are you sure you want to continue? [y/n] ")
+            if use_save_dir == 'n':
+                save_dir = input("Enter new save directory: ")
+            elif use_save_dir == 'y':
+                done = True
+            else:
+                print("Please enter one of [y/n]")
+
     return save_dir
 
 
