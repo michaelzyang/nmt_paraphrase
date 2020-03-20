@@ -46,7 +46,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     warmup_steps = 4000
     for epoch in range(start_epoch, n_epochs + 1):
         avg_loss = 0.0  # for accumulating loss per reporting cycle over batches
-        step_cnt = 0
+        step_cnt = 0  # step counter until update
         for batch_num, batch in enumerate(train_loader):
             # Unpack batch objects
             src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
@@ -60,10 +60,10 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             tgt_mask = tgt_mask.to(device)
 
             # Update weights
-            # optimizer.zero_grad()
             loss = compute_loss(model, src_tokens, tgt_tokens, src_mask=None, tgt_mask=tgt_mask, memory_mask=None,
                                 src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                 memory_key_padding_mask=src_key_padding_mask, criterion=criterion)
+            # Update only after every 4 batches
             loss_ = loss / 4
             loss_.backward()
             # nn.utils.clip_grad_norm_(model.parameters(), 1)
