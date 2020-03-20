@@ -34,23 +34,31 @@ class TransformerModel(nn.Module):
     def __init__(self, src_vocab_size, tgt_vocab_size, hidden_dim, max_len, nhead, num_encoder_layers=6,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.1, activation='relu', weight_tie=True, sinusoidal=True):
         super(TransformerModel, self).__init__()
+        # Embedding layers
         self.src_token_embedding = nn.Embedding(src_vocab_size, hidden_dim)
         if weight_tie == True:
             assert src_vocab_size == tgt_vocab_size
             self.tgt_token_embedding = self.src_token_embedding
         else:
             self.tgt_token_embedding = nn.Embedding(tgt_vocab_size, hidden_dim)
-        # TODO: FIX HACK
-        # self.position_embedding = nn.Embedding(max_len, hidden_dim)
+
+        self.sinusoidal = sinusoidal
         if sinusoidal:
             self.position_embedding = PositionalEncoding(hidden_dim, dropout, max_len)
         else:
             self.position_embedding = nn.Embedding(max_len, hidden_dim)
+
+
+        # Transformer model
+        self.d_model = hidden_dim  # following notation from Vaswani et al.
+        self.d_ff = dim_feedforward  # following notation from Vaswani et al.
+        self.h = nhead  # following notation from Vaswani et al.
         self.transformer = nn.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
                                           dropout=dropout, activation=activation)
+
+        # Output layer
         self.linear = nn.Linear(hidden_dim, tgt_vocab_size)
-        self.sinusoidal = sinusoidal
 
     def _reset_parameters(self):
         r"""Initiate parameters in the transformer model."""

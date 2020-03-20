@@ -33,7 +33,6 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
         save_dir = save_dir + '/'
 
     model.train()
-    d_model = 512
     # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
     # tgt_mask = tgt_mask.to(device)
 
@@ -73,7 +72,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
                 optimizer.step()
                 optimizer.zero_grad()
                 step_cnt = 0
-                lr = (d_model ** (-0.5)) * min(all_step_cnt ** (-0.5), all_step_cnt * (warmup_steps ** (-1.5)))
+                lr = (model.d_model ** (-0.5)) * min(all_step_cnt ** (-0.5), all_step_cnt * (warmup_steps ** (-1.5)))
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = lr
 
@@ -201,12 +200,14 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
 
 def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,
                  tgt_key_padding_mask, memory_key_padding_mask, criterion):
-    # drop last token for tgt_tokens input as decoder at each time step should attend to all tokens up to prev token
-    # shift tgt_key_padding_mask left by one position for the same reason (the eos tag will end up being masked out
+    # drop last token for tgt_tokens and tgt_key_padding_mask input,
+    # because decoder at each time step should attend to all tokens up to prev token
     outputs = model(src_tokens, tgt_tokens[:, :-1], src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                     src_key_padding_mask=src_key_padding_mask,
                     tgt_key_padding_mask=tgt_key_padding_mask[:, :-1],
                     memory_key_padding_mask=memory_key_padding_mask)
     outputs = outputs.transpose(0, 1).transpose(1, 2)
+
+    # accordingly, shift ground truth tokens left by one
     loss = criterion(outputs, tgt_tokens[:, 1:].long())
     return loss
