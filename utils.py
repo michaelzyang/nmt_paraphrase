@@ -12,6 +12,7 @@ def check_save_dir(save_dir):
             if mkdir_save == 'm':
                 os.makedirs(save_dir)
                 done = True
+                continue
             elif mkdir_save == 'n':
                 save_dir = input("Enter new save directory: ")
                 continue
@@ -19,6 +20,7 @@ def check_save_dir(save_dir):
                 sys.exit()
             else:
                 print("Please enter one of [m, n, e]")
+                continue
 
         #  Ensure user knows if save_dir is not empty
         if os.listdir(save_dir):

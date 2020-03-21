@@ -60,7 +60,8 @@ parser.add_argument('--momentum', type=float, default=0.9)
 parser.add_argument('--scheduler', type=str, default='none', choices=['none', 'plateau'])
 
 # Hyperparameters: inference
-parser.add_argument('-b', '--beam_size', type=int, default=5)
+parser.add_argument('-b', '--beam-size', type=int, default=5)
+parser.add_argument('-s', '--bleu-batches', type=int, default=5)  # num batches to evaluate BLEU over; set to 0 to skip
 
 args = parser.parse_args()
 MODE = 'inference' if args.inference else 'train'
@@ -138,7 +139,10 @@ if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
     train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model,
           epochs_left, criterion, optimizer, scheduler, save_dir=args.save_dir, start_epoch=start_epoch,
-          report_freq=1000, device=device)
+          report_freq=1000, bleu_batches=args.bleu_batches, device=device)
+
 else: # MODE == 'inference'
-    bleu_score = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2), args.beam_size, device=device)
-    print(f"The model achieves a BLEU score of {bleu_score} on the provided test dataset.")
+    PRINT_SEQS = 5  # the number of example translations to print
+    bleu_avg = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2),
+                         args.beam_size, bleu_batches=args.bleu_batches, print_seqs=PRINT_SEQS, device=device)
+    print(f"The model achieves an average BLEU score of {bleu_avg} over {args.bleu_batches * args.batch} sequences.")

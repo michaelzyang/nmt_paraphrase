@@ -8,7 +8,8 @@ from data_processing import idxs_to_sentences
 
 
 def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
-          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, device='gpu'):
+          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, bleu_batches=5,
+          device='gpu'):
     """
     Training procedure, saving the model checkpoint after every epoch
     :param train_loader: training set dataloader
@@ -26,13 +27,14 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     :param save_dir: the save directory
     :param start_epoch: the starting epoch number (greater than 1 if continuing from a checkpoint)
     :param report_freq: report training set loss every report_freq batches
+    :param bleu_batches: the number of batches of the dev set to evaluate BLEU over
     :param device: the torch device used for processing the training
     :return: None
     """
     # Setup
     if save_dir[-1] != '/':
         save_dir = save_dir + '/'
-
+    n_bleu_seqs = bleu_batches * dev_loader.batch_size
     model.train()
     # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
     # tgt_mask = tgt_mask.to(device)
@@ -40,7 +42,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     print(f"Beginning training at {datetime.now()}")
     if start_epoch == 1:
         with open(save_dir + "results.txt", mode='a') as f:
-            f.write("epoch,dev_loss\n")
+            f.write("epoch,dev_loss,dev_bleu\n")
+
     # Train epochs
     all_step_cnt = 0
     warmup_steps = 4000
@@ -80,8 +83,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             # Accumulate loss for reporting
             avg_loss += loss.item()
             if report_freq and (batch_num + 1) % report_freq == 0:
-                print(f"")
-                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\tlr: {lr:.6f}\t{datetime.now()}')
+                print(f'Epoch {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\tlr: {lr:.6f}\t{datetime.now()}')
                 avg_loss = 0.0
 
             # Cleanup
@@ -90,8 +92,11 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
 
         # Evaluate epoch
         dev_loss = eval_loss(model, dev_loader, criterion, device)
+        dev_bleu = eval_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size,
+                             bleu_batches=bleu_batches, print_seqs=0, device=device)
         with open(save_dir + "results.txt", mode='a') as f:
-            f.write(f"{epoch},{dev_loss}\n")
+            f.write(f"{epoch},{dev_loss},{dev_bleu}\n")
+
 
         if scheduler:
             scheduler.step(dev_loss)
@@ -101,10 +106,11 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'dev_loss': dev_loss
+            'dev_loss': dev_loss,
+            'dev_bleu': dev_bleu
         }
-        torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
-        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
+        torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_bleu:.4f}.pth")
+        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\tDev BLEU over {n_bleu_seqs} seqs: {dev_bleu:.4f}\t{datetime.now()}')
     print(f"Finished training at {datetime.now()}")
 
 
@@ -148,7 +154,8 @@ def eval_loss(model, data_loader, criterion, device='gpu'):
     return loss_accum / batch_count
 
 
-def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1, device='gpu'):
+def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1,
+              bleu_batches=-1, print_seqs=0, device='gpu'):
     """
     Evaluates the BLEU score of the model on a given dataset
     :param model: The model being evaluated
@@ -158,6 +165,8 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     :param eos_token: The index of the end of sentence token
     :param max_len: The maximum length of an output sequence
     :param beam_size: The beam size used for the beam search algorithm when decoding
+    :param bleu_batches: the number of batches, randomly sampled, to use for evaluation; -1 evaluates the entire dataset
+    :param print_seqs: the number of references and translations to print
     :param device: The torch device used for processing the training
     :return: The BLEU score out of 100
     """
@@ -166,10 +175,18 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     hyps = []
     refs = []
 
+    if bleu_batches == 0:
+        return float('nan')
+    elif bleu_batches > 0:
+        subset_idxs = np.random.choice(len(data_loader), bleu_batches, replace=False)
+
     with torch.no_grad():
         for (i, batch) in enumerate(data_loader):
-            if i > 10:
-                break  # TODO DELETE HACK
+            # skip batch if not in the sampled subset
+            if bleu_batches > 0 and i not in subset_idxs:
+                continue
+
+            # Send data to device
             src_tokens, src_key_padding_mask, src_lens, tgt_tokens, tgt_key_padding_mask, tgt_lens = batch
             max_src_len = torch.max(src_lens)
             src_tokens, src_key_padding_mask = src_tokens[:, :max_src_len], src_key_padding_mask[:, :max_src_len]
@@ -193,22 +210,26 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
 
             torch.cuda.empty_cache()
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
+
     model.train()
-
-    print("Printing 5 random translations")
     n_sequences = len(hyps)
-    idxs = np.random.choice(n_sequences, 5, replace=False)
-    for i in idxs:
-        i_str = str(i).zfill(4)
-        print(f"ref {i_str}: {refs[i]}")
-        print(f"hyp {i_str}: {hyps[i]}\n")
 
-    # bleu = sacrebleu.corpus_bleu(hyps, [refs]).score  # sacrebleu expects untokenized input (not Moses tokenized input)
+    if print_seqs:
+        print(f"Printing {print_seqs} random translations")
+        idxs = np.random.choice(n_sequences, print_seqs, replace=False)
+        idxs.sort()
+        for i in idxs:
+            i_str = str(i).zfill(4)
+            print(f"ref {i_str} ========================")
+            print(refs[i])
+            print(f"hyp {i_str} ------------------------")
+            print(hyps[i])
 
+    # Calculate average BLEU
     chencherry = SmoothingFunction()
     bleu_scores = [sentence_bleu([ref.split()], hyp.split(), smoothing_function=chencherry.method1) for hyp, ref in zip(hyps, refs)]
-    bleu = sum(bleu_scores) / n_sequences * 100
-    return bleu
+    bleu_avg = sum(bleu_scores) / n_sequences * 100
+    return bleu_avg
 
 
 def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,
