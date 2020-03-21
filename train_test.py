@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
-from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from datetime import datetime
 from data_processing import idxs_to_sentences
 
@@ -80,9 +80,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             # Accumulate loss for reporting
             avg_loss += loss.item()
             if report_freq and (batch_num + 1) % report_freq == 0:
-                print("learning rate: %.6f"%lr)
-                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\t\
-                      {datetime.now()}')
+                print(f"")
+                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\tlr: {lr:.6f}\t{datetime.now()}')
                 avg_loss = 0.0
 
             # Cleanup
@@ -91,7 +90,6 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
 
         # Evaluate epoch
         dev_loss = eval_loss(model, dev_loader, criterion, device)
-        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
         with open(save_dir + "results.txt", mode='a') as f:
             f.write(f"{epoch},{dev_loss}\n")
 
@@ -106,6 +104,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             'dev_loss': dev_loss
         }
         torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
+        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
     print(f"Finished training at {datetime.now()}")
 
 
@@ -206,8 +205,9 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
 
     # bleu = sacrebleu.corpus_bleu(hyps, [refs]).score  # sacrebleu expects untokenized input (not Moses tokenized input)
 
-    bleu = sum([sentence_bleu(hyp.split(), [ref.split()]) for hyp, ref in zip(hyps, refs)]) / n_sequences
-    bleu *= 100
+    chencherry = SmoothingFunction()
+    bleu_scores = [sentence_bleu([ref.split()], hyp.split(), smoothing_function=chencherry.method1) for hyp, ref in zip(hyps, refs)]
+    bleu = sum(bleu_scores) / n_sequences * 100
     return bleu
 
 
