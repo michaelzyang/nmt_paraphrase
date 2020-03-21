@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from datetime import datetime
 from data_processing import idxs_to_sentences
 
@@ -157,7 +157,7 @@ def eval_loss(model, data_loader, criterion, device='gpu'):
 def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1,
               bleu_batches=-1, print_seqs=0, device='gpu'):
     """
-    Evaluates the BLEU score of the model on a given dataset
+    Evaluates the corpus BLEU-4 score (weighted by sequence length) of the model on a given dataset
     :param model: The model being evaluated
     :param data_loader: A dataloader for the data over which to evaluate
     :param idx_to_subword: The dictionary for the vocabulary of subword indices to subwords
@@ -227,9 +227,10 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
 
     # Calculate average BLEU
     chencherry = SmoothingFunction()
-    bleu_scores = [sentence_bleu([ref.split()], hyp.split(), smoothing_function=chencherry.method1) for hyp, ref in zip(hyps, refs)]
-    bleu_avg = sum(bleu_scores) / n_sequences * 100
-    return bleu_avg
+    refs = [[ref.split()] for ref in refs]
+    hyps = [hyp.split() for hyp in hyps]
+    bleu_score = corpus_bleu(refs, hyps, smoothing_function=chencherry.method1)
+    return bleu_score * 100
 
 
 def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,

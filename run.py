@@ -86,7 +86,7 @@ if MODE == 'train':
     dev_data = NMTData(args.dev_src, args.dev_tgt, args.src_dict, args.tgt_dict)
     dev_loader = DataLoader(dev_data, batch_size=args.batch, shuffle=False, num_workers=0)
     print(f"Loaded {len(train_data)} training sentences and {len(dev_data)} development sentences.")
-else: # MODE == 'inference'
+else:  # MODE == 'inference'
     test_data = NMTData(args.test_src, args.test_tgt, args.src_dict, args.tgt_dict)
     test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, num_workers=8)
     print(f"Loaded {len(test_data)} test sentences.")
@@ -95,8 +95,7 @@ subword_to_idx = json_to_dict(args.tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
 src_vocab_size = len(json_to_dict(args.src_dict))
 tgt_vocab_size = len(subword_to_idx)
-print(src_vocab_size)
-print(tgt_vocab_size)
+print(f"Source language vocabulary size: {src_vocab_size}\t Target language vocabulary size: {tgt_vocab_size}")
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
@@ -129,7 +128,7 @@ if MODE == 'train':
     if start_epoch == 1:
         with open(args.save_dir + "params.json", mode='w') as f:
             json.dump(vars(args), f)
-else: # MODE == 'inference'
+else:  # MODE == 'inference'
     utils.load_inference(model, args.checkpt_path)
 
 
@@ -141,7 +140,8 @@ if MODE == 'train':
           epochs_left, criterion, optimizer, scheduler, save_dir=args.save_dir, start_epoch=start_epoch,
           report_freq=1000, bleu_batches=args.bleu_batches, device=device)
 
-else: # MODE == 'inference'
+else:  # MODE == 'inference'
+    print("Beginning BLEU score evaluation")
     PRINT_SEQS = 5  # the number of example translations to print
     bleu_avg = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2),
                          args.beam_size, bleu_batches=args.bleu_batches, print_seqs=PRINT_SEQS, device=device)
