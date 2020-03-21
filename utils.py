@@ -14,6 +14,7 @@ def check_save_dir(save_dir):
                 done = True
             elif mkdir_save == 'n':
                 save_dir = input("Enter new save directory: ")
+                continue
             elif mkdir_save == 'e':
                 sys.exit()
             else:
@@ -23,7 +24,7 @@ def check_save_dir(save_dir):
         if os.listdir(save_dir):
             use_save_dir = input(f"Save directory {save_dir} is not empty. Are you sure you want to continue? [y/n] ")
             if use_save_dir == 'n':
-                save_dir = input("Enter new save directory: ")
+                save_dir = input("Enter new save directory (or [exit] to exit): ")
             elif use_save_dir == 'y':
                 done = True
             else:

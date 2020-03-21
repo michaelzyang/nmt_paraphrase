@@ -1,8 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from datetime import datetime
-
 from data_processing import idxs_to_sentences
 
 
@@ -79,9 +80,8 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             # Accumulate loss for reporting
             avg_loss += loss.item()
             if report_freq and (batch_num + 1) % report_freq == 0:
-                print("learning rate: %.6f"%lr)
-                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\t\
-                      {datetime.now()}')
+                print(f"")
+                print(f'Epoch: {epoch}\tBatch: {batch_num + 1}\tTrain loss: {avg_loss / report_freq:.4f}\tlr: {lr:.6f}\t{datetime.now()}')
                 avg_loss = 0.0
 
             # Cleanup
@@ -89,8 +89,7 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask, loss, loss_
 
         # Evaluate epoch
-        dev_loss = eval_loss(model, dev_loader, max_len, criterion, device)
-        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
+        dev_loss = eval_loss(model, dev_loader, criterion, device)
         with open(save_dir + "results.txt", mode='a') as f:
             f.write(f"{epoch},{dev_loss}\n")
 
@@ -105,21 +104,20 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
             'dev_loss': dev_loss
         }
         torch.save(checkpoint, save_dir + f"checkpoint_{epoch}_{dev_loss:.4f}.pth")
+        print(f'Epoch {epoch} complete.\tDev loss: {dev_loss:.4f}\t{datetime.now()}')
     print(f"Finished training at {datetime.now()}")
 
 
-def eval_loss(model, data_loader, max_len, criterion, device='gpu'):
+def eval_loss(model, data_loader, criterion, device='gpu'):
     """
     Evaluates the loss of the model on a given dataset
     :param model: The model being evaluated
     :param data_loader: A dataloader for the data over which to evaluate
-    :param max_len: The maximum length of an output sequence
     :param criterion: The loss criterion being computed
     :param device: The torch device used for processing the training
     :return: The average loss per sentence
     """
     model.eval()
-    # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
     loss_accum = 0.0
     batch_count = 0
 
@@ -179,23 +177,38 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
             tgt_tokens, tgt_key_padding_mask = tgt_tokens[:, :max_tgt_len], tgt_key_padding_mask[:, :max_tgt_len]
             src_tokens, src_key_padding_mask = src_tokens.to(device), src_key_padding_mask.to(device)
             tgt_tokens, tgt_key_padding_mask = tgt_tokens.to(device), tgt_key_padding_mask.to(device)
+
+            # Produce hypotheses
             if beam_size == 1:
                 hyp_batch = model.inference(src_tokens, src_key_padding_mask, sos_token, max_len)
             else:
-                # only suuports batch size 1
+                # only supports batch size 1
                 hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
-            hyp_batch = idxs_to_sentences(hyp_batch, idx_to_subword)
+            hyp_batch = idxs_to_sentences(hyp_batch, idx_to_subword, unsplit=True)  # [str]
             hyps.extend(hyp_batch)  # [N]
-            ref_batch = idxs_to_sentences(tgt_tokens.cpu().numpy().tolist(), idx_to_subword)  # list of single-element lists
+
+            # Produce references
+            ref_batch = idxs_to_sentences(tgt_tokens.cpu().numpy().tolist(), idx_to_subword, unsplit=True)
             refs.extend(ref_batch)
 
             torch.cuda.empty_cache()
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
     model.train()
-    print(hyps[:5])
-    print(refs[:5])
-    bleu = sacrebleu.corpus_bleu(hyps, [refs])
-    return bleu.score
+
+    print("Printing 5 random translations")
+    n_sequences = len(hyps)
+    idxs = np.random.choice(n_sequences, 5, replace=False)
+    for i in idxs:
+        i_str = str(i).zfill(4)
+        print(f"ref {i_str}: {refs[i]}")
+        print(f"hyp {i_str}: {hyps[i]}\n")
+
+    # bleu = sacrebleu.corpus_bleu(hyps, [refs]).score  # sacrebleu expects untokenized input (not Moses tokenized input)
+
+    chencherry = SmoothingFunction()
+    bleu_scores = [sentence_bleu([ref.split()], hyp.split(), smoothing_function=chencherry.method1) for hyp, ref in zip(hyps, refs)]
+    bleu = sum(bleu_scores) / n_sequences * 100
+    return bleu
 
 
 def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,

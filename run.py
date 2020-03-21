@@ -24,16 +24,15 @@ parser.add_argument('--tgt-dict', type=str, default="data/train.BPE.de.json")
 
 parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
 parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
-# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
-
 parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
 parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
-# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
-
 parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
 parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+
+# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
+# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
+# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
 # parser.add_argument('--test-src', type=str, default="data/train_small.BPE.en")
 # parser.add_argument('--test-tgt', type=str, default="data/train_small.BPE.de")
 
@@ -69,7 +68,8 @@ if args.save_dir[-1] != '/':
     args.save_dir = args.save_dir + '/'
 
 # Ensure save path exists
-args.save_dir = utils.check_save_dir(args.save_dir)
+if MODE == 'train':
+    args.save_dir = utils.check_save_dir(args.save_dir)
 
 # System config
 device = utils.get_device()
@@ -82,11 +82,11 @@ print(f"Device = {device}")
 if MODE == 'train':
     train_data = NMTData(args.train_src, args.train_tgt, args.src_dict, args.tgt_dict)
     train_loader = DataLoader(train_data, batch_size=args.batch, shuffle=True, num_workers=0)
-    dev_data = NMTData(args.dev_src, args.dev_tgt, args.dev_src_dict, args.dev_tgt_dict)
+    dev_data = NMTData(args.dev_src, args.dev_tgt, args.src_dict, args.tgt_dict)
     dev_loader = DataLoader(dev_data, batch_size=args.batch, shuffle=False, num_workers=0)
     print(f"Loaded {len(train_data)} training sentences and {len(dev_data)} development sentences.")
 else: # MODE == 'inference'
-    test_data = NMTData(args.test_src, args.test_tgt, args.test_src_dict, args.test_tgt_dict)
+    test_data = NMTData(args.test_src, args.test_tgt, args.src_dict, args.tgt_dict)
     test_loader = DataLoader(test_data, batch_size=args.batch, shuffle=False, num_workers=8)
     print(f"Loaded {len(test_data)} test sentences.")
 
