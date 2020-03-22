@@ -19,22 +19,24 @@ parser.add_argument('--save-dir', type=str, default="save/")
 parser.add_argument('--checkpt-path', type=str, default=None)
 
 # Data files
-parser.add_argument('--src-dict', type=str, default="data/train.BPE.en.json")
-parser.add_argument('--tgt-dict', type=str, default="data/train.BPE.de.json")
+SRC_LANG = 'de'
+TGT_LANG = 'en'
+parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
+parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
 
-parser.add_argument('--train-src', type=str, default="data/train.BPE.en")
-parser.add_argument('--train-tgt', type=str, default="data/train.BPE.de")
-parser.add_argument('--dev-src', type=str, default="data/dev.BPE.en")
-parser.add_argument('--dev-tgt', type=str, default="data/dev.BPE.de")
-parser.add_argument('--test-src', type=str, default="data/test.BPE.en")
-parser.add_argument('--test-tgt', type=str, default="data/test.BPE.de")
+parser.add_argument('--train-src', type=str, default=f"data/train.BPE.{SRC_LANG}")
+parser.add_argument('--train-tgt', type=str, default=f"data/train.BPE.{TGT_LANG}")
+parser.add_argument('--dev-src', type=str, default=f"data/dev.BPE.{SRC_LANG}")
+parser.add_argument('--dev-tgt', type=str, default=f"data/dev.BPE.{TGT_LANG}")
+parser.add_argument('--test-src', type=str, default=f"data/test.BPE.{SRC_LANG}")
+parser.add_argument('--test-tgt', type=str, default=f"data/test.BPE.{TGT_LANG}")
 
-# parser.add_argument('--train-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--train-tgt', type=str, default="data/train_small.BPE.de")
-# parser.add_argument('--dev-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--dev-tgt', type=str, default="data/train_small.BPE.de")
-# parser.add_argument('--test-src', type=str, default="data/train_small.BPE.en")
-# parser.add_argument('--test-tgt', type=str, default="data/train_small.BPE.de")
+# parser.add_argument('--train-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+# parser.add_argument('--train-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+# parser.add_argument('--dev-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+# parser.add_argument('--dev-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+# parser.add_argument('--test-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+# parser.add_argument('--test-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
 
 # Hyperparameters: data
 parser.add_argument('-n', '--batch', type=int, default=16)
@@ -46,7 +48,7 @@ parser.add_argument('-h', '--num_heads', type=int, default=4)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
 parser.add_argument('-f', '--dim-feedforward', type=int, default=1024)
-parser.add_argument('-p', '--dropout', type=float, default=0.1)
+parser.add_argument('-p', '--dropout', type=float, default=0.0)
 parser.add_argument('-a', '--activation', type=str, default='relu', choices=['relu'])
 
 # Hyperparameters: training
