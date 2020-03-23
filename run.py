@@ -64,7 +64,7 @@ parser.add_argument('--scheduler', type=str, default='none', choices=['none', 'p
 
 # Hyperparameters: inference
 parser.add_argument('-b', '--beam-size', type=int, default=5)
-parser.add_argument('-s', '--decode-batches', type=int, default=5)  # num batches to decode for evaluation; (0 to skip)
+parser.add_argument('-s', '--decode-batches', type=int, default=5)  # num batches to decode for evaluation; (-1 for all)
 
 args = parser.parse_args()
 MODE = 'inference' if args.inference else 'train'
@@ -146,11 +146,14 @@ if MODE == 'train':
 else:  # MODE == 'inference'
     print(f"Beginning BLEU score evaluation at {datetime.now()}.")
     PRINT_SEQS = 5  # the number of example translations to print
-    hyps, refs = decode_outputs(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2),
-                         args.beam_size, args.decode_batches, PRINT_SEQS, device)
+
+    hyps, refs = decode_outputs(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len,
+                         args.beam_size, args.decode_batches, print_seqs=PRINT_SEQS, device=device)
 
     print(f"The model achieves the following corpus BLEU scores over {args.decode_batches * args.batch} sequences.")
-    for i in range(1, 7 + 1):
+    for i in range(7 + 1):
         bleu_score = eval_bleu(hyps, refs, smoothing_method=i)
-        print(f"Method {i}:\tBLEU score: {bleu_score}")
+        print(f"Smoothing method {i}\tBLEU score: {bleu_score}")
     print(f"Completed at {datetime.now()}.")
+    smoothing_url = "https://www.nltk.org/api/nltk.translate.html#nltk.translate.bleu_score.SmoothingFunction"
+    print("For smoothing method documentation, see", smoothing_url)

@@ -161,7 +161,7 @@ def eval_bleu(hyps, refs, smoothing_method=0):
     Evaluates the corpus BLEU-4 score (weighted by sequence length) of the model on a given dataset and smoothing method
     :param hyps: [str] the list of hypotheses
     :param refs: [str] the list of references
-    :param smoothing_method: int smoothing method [0-7] in nltk.translate.bleu_score.SmoothingFunction; 0 is no smoothing
+    :param smoothing_method: smoothing method [0-7] in nltk.translate.bleu_score.SmoothingFunction; 0 is no smoothing
     :return : float The BLEU score out of 100
     """
     # https://www.nltk.org/api/nltk.translate.html#nltk.translate.bleu_score.SmoothingFunction
@@ -188,7 +188,7 @@ def decode_outputs(model, data_loader, idx_to_subword, sos_token, eos_token, max
     :param eos_token: The index of the end of sentence token
     :param max_len: The maximum length of an output sequence
     :param beam_size: The beam size used for the beam search algorithm when decoding
-    :param decode_batches: the number of batches, randomly sampled, to use for evaluation; -1 evaluates the entire dataset
+    :param decode_batches: the num of batches, randomly sampled, to use for evaluation; -1 evaluates the entire dataset
     :param print_seqs: the number of references and translations to print
     :param device: The torch device used for processing the training
     :return: hyps [str], refs [str]
@@ -244,10 +244,11 @@ def decode_outputs(model, data_loader, idx_to_subword, sos_token, eos_token, max
         idxs.sort()
         for i in idxs:
             i_str = str(i).zfill(4)
-            print(f"ref {i_str} ========================")
+            print(f"======================== ref {i_str} ========================")
             print(refs[i])
-            print(f"hyp {i_str} ------------------------")
+            print(f"------------------------ hyp {i_str} ------------------------")
             print(hyps[i])
+        print("=============================================================")
 
     return hyps, refs
     
