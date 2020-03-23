@@ -15,6 +15,7 @@ def check_save_dir(save_dir):
                 continue
             elif mkdir_save == 'n':
                 save_dir = input("Enter new save directory: ")
+                save_dir = input("Enter new save directory: ")
                 continue
             elif mkdir_save == 'e':
                 sys.exit()
@@ -47,7 +48,7 @@ def get_device():
     return device
 
 
-def load_inference(model, checkpoint_path):
+def load_inference(model, checkpoint_path, device='gpu'):
     if not checkpoint_path:
         print("In inference mode, a path to a model checkpoint must be provided.")
         checkpoint_path = input(f"Please enter checkpoint path or enter 'exit' to exit: ")
@@ -58,7 +59,7 @@ def load_inference(model, checkpoint_path):
         if checkpoint_path == 'exit':
             sys.exit()
         try:
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, map_location=device)
             model.load_state_dict(checkpoint['model_state_dict'])
             exit_loop = True
         except FileNotFoundError:
@@ -66,7 +67,7 @@ def load_inference(model, checkpoint_path):
             checkpoint_path = input("Provide a new path, or 'exit' to exit: ")
 
 
-def init_load_train(model, checkpoint_path, optimizer=None, init_fn=None):
+def init_load_train(model, checkpoint_path, optimizer=None, init_fn=None, device='gpu'):
     # Check input
     if not checkpoint_path:
         init = input("Checkpoint path not provided. Do you want to randomly initialize weights [y] or enter a path [n]? ")
@@ -84,7 +85,7 @@ def init_load_train(model, checkpoint_path, optimizer=None, init_fn=None):
         exit_loop = False
         while not exit_loop:
             try:
-                checkpoint = torch.load(checkpoint_path)
+                checkpoint = torch.load(checkpoint_path, map_location=device)
                 start_epoch = checkpoint['epoch'] + 1
                 model.load_state_dict(checkpoint['model_state_dict'])
                 if optimizer:
