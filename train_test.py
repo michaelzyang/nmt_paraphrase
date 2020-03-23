@@ -8,7 +8,7 @@ from data_processing import idxs_to_sentences
 
 
 def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size, model, n_epochs,
-          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, bleu_batches=5,
+          criterion, optimizer, scheduler=None, save_dir="./", start_epoch=1, report_freq=0, decode_batches=5,
           device='gpu'):
     """
     Training procedure, saving the model checkpoint after every epoch
@@ -27,14 +27,14 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
     :param save_dir: the save directory
     :param start_epoch: the starting epoch number (greater than 1 if continuing from a checkpoint)
     :param report_freq: report training set loss every report_freq batches
-    :param bleu_batches: the number of batches of the dev set to evaluate BLEU over
+    :param decode_batches: the number of batches of the dev set to evaluate BLEU over
     :param device: the torch device used for processing the training
     :return: None
     """
     # Setup
     if save_dir[-1] != '/':
         save_dir = save_dir + '/'
-    n_bleu_seqs = bleu_batches * dev_loader.batch_size
+    n_bleu_seqs = decode_batches * dev_loader.batch_size
     model.train()
     # tgt_mask = model.transformer.generate_square_subsequent_mask(sz=max_len - 1)
     # tgt_mask = tgt_mask.to(device)
@@ -92,8 +92,10 @@ def train(train_loader, dev_loader, idx_to_subword, sos_token, eos_token, max_le
 
         # Evaluate epoch
         dev_loss = eval_loss(model, dev_loader, criterion, device)
-        dev_bleu = eval_bleu(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size,
-                             bleu_batches=bleu_batches, print_seqs=0, device=device)
+        hyps, refs = decode_outputs(model, dev_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size,
+                                    decode_batches, print_seqs=0, device=device)
+        SMOOTHING_METHOD = 1  # epsilon smoothing
+        dev_bleu = eval_bleu(hyps, refs, smoothing_method=SMOOTHING_METHOD)
         with open(save_dir + "results.txt", mode='a') as f:
             f.write(f"{epoch},{dev_loss},{dev_bleu}\n")
 
@@ -154,10 +156,31 @@ def eval_loss(model, data_loader, criterion, device='gpu'):
     return loss_accum / batch_count
 
 
-def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1,
-              bleu_batches=-1, print_seqs=0, device='gpu'):
+def eval_bleu(hyps, refs, smoothing_method=0):
     """
-    Evaluates the corpus BLEU-4 score (weighted by sequence length) of the model on a given dataset
+    Evaluates the corpus BLEU-4 score (weighted by sequence length) of the model on a given dataset and smoothing method
+    :param hyps: [str] the list of hypotheses
+    :param refs: [str] the list of references
+    :param smoothing_method: int smoothing method [0-7] in nltk.translate.bleu_score.SmoothingFunction; 0 is no smoothing
+    :return : float The BLEU score out of 100
+    """
+    # https://www.nltk.org/api/nltk.translate.html#nltk.translate.bleu_score.SmoothingFunction
+    chencherry = SmoothingFunction()
+    SMOOTHING_METHODS = [chencherry.method0, chencherry.method1, chencherry.method2, chencherry.method3,
+                         chencherry.method4, chencherry.method5, chencherry.method6, chencherry.method7]
+
+    # Gather into format expected by corpus_bleu function
+    refs = [[ref.split()] for ref in refs]
+    hyps = [hyp.split() for hyp in hyps]
+
+    bleu_score = 100 * corpus_bleu(refs, hyps, smoothing_function=SMOOTHING_METHODS[smoothing_method])
+    return bleu_score
+
+
+def decode_outputs(model, data_loader, idx_to_subword, sos_token, eos_token, max_len, beam_size=1, decode_batches=-1, 
+                   print_seqs=0, device='gpu'):
+    """
+    Decodes outputs of model on the entirety or subset of a given dataset
     :param model: The model being evaluated
     :param data_loader: A dataloader for the data over which to evaluate
     :param idx_to_subword: The dictionary for the vocabulary of subword indices to subwords
@@ -165,25 +188,25 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
     :param eos_token: The index of the end of sentence token
     :param max_len: The maximum length of an output sequence
     :param beam_size: The beam size used for the beam search algorithm when decoding
-    :param bleu_batches: the number of batches, randomly sampled, to use for evaluation; -1 evaluates the entire dataset
+    :param decode_batches: the number of batches, randomly sampled, to use for evaluation; -1 evaluates the entire dataset
     :param print_seqs: the number of references and translations to print
     :param device: The torch device used for processing the training
-    :return: The BLEU score out of 100
+    :return: hyps [str], refs [str]
     """
     model.eval()
 
     hyps = []
     refs = []
 
-    if bleu_batches == 0:
+    if decode_batches == 0:
         return float('nan')
-    elif bleu_batches > 0:
-        subset_idxs = np.random.choice(len(data_loader), bleu_batches, replace=False)
+    elif decode_batches > 0:
+        subset_idxs = np.random.choice(len(data_loader), decode_batches, replace=False)
 
     with torch.no_grad():
         for (i, batch) in enumerate(data_loader):
             # skip batch if not in the sampled subset
-            if bleu_batches > 0 and i not in subset_idxs:
+            if decode_batches > 0 and i not in subset_idxs:
                 continue
 
             # Send data to device
@@ -200,7 +223,8 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
                 hyp_batch = model.inference(src_tokens, src_key_padding_mask, sos_token, max_len)
             else:
                 # only supports batch size 1
-                hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size) # (S, N, V)
+                hyp_batch, _ = model.beam_search(src_tokens, src_key_padding_mask, sos_token, eos_token, max_len,
+                                                 beam_size)  # (S, N, V)
             hyp_batch = idxs_to_sentences(hyp_batch, idx_to_subword, unsplit=True)  # [str]
             hyps.extend(hyp_batch)  # [N]
 
@@ -212,9 +236,9 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
             del batch, src_tokens, src_key_padding_mask, tgt_tokens, tgt_key_padding_mask
 
     model.train()
-    n_sequences = len(hyps)
 
     if print_seqs:
+        n_sequences = len(hyps)
         print(f"Printing {print_seqs} random translations")
         idxs = np.random.choice(n_sequences, print_seqs, replace=False)
         idxs.sort()
@@ -225,14 +249,8 @@ def eval_bleu(model, data_loader, idx_to_subword, sos_token, eos_token, max_len,
             print(f"hyp {i_str} ------------------------")
             print(hyps[i])
 
-    # Calculate average BLEU
-    chencherry = SmoothingFunction()
-    refs = [[ref.split()] for ref in refs]
-    hyps = [hyp.split() for hyp in hyps]
-    bleu_score = corpus_bleu(refs, hyps, smoothing_function=chencherry.method1)
-    return bleu_score * 100
-
-
+    return hyps, refs
+    
 def compute_loss(model, src_tokens, tgt_tokens, src_mask, tgt_mask, memory_mask, src_key_padding_mask,
                  tgt_key_padding_mask, memory_key_padding_mask, criterion):
     # drop last token for tgt_tokens and tgt_key_padding_mask input,

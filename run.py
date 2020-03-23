@@ -5,10 +5,11 @@ import json
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from datetime import datetime
 
 from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
-from models import TransformerModel, init_weights
-from train_test import train, eval_loss, eval_bleu
+from models import TransformerModel
+from train_test import train, decode_outputs, eval_bleu
 
 
 # ======================= Set Up Environment ======================= #
@@ -19,8 +20,8 @@ parser.add_argument('--save-dir', type=str, default="save/")
 parser.add_argument('--checkpt-path', type=str, default=None)
 
 # Data files
-SRC_LANG = 'de'
-TGT_LANG = 'en'
+SRC_LANG = 'en'
+TGT_LANG = 'de'
 parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
 parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
 
@@ -48,7 +49,7 @@ parser.add_argument('-h', '--num_heads', type=int, default=4)
 parser.add_argument('--enc-layers', type=int, default=6)
 parser.add_argument('--dec-layers', type=int, default=6)
 parser.add_argument('-f', '--dim-feedforward', type=int, default=1024)
-parser.add_argument('-p', '--dropout', type=float, default=0.0)
+parser.add_argument('-p', '--dropout', type=float, default=0.1)
 parser.add_argument('-a', '--activation', type=str, default='relu', choices=['relu'])
 
 # Hyperparameters: training
@@ -63,7 +64,7 @@ parser.add_argument('--scheduler', type=str, default='none', choices=['none', 'p
 
 # Hyperparameters: inference
 parser.add_argument('-b', '--beam-size', type=int, default=5)
-parser.add_argument('-s', '--bleu-batches', type=int, default=5)  # num batches to evaluate BLEU over; set to 0 to skip
+parser.add_argument('-s', '--decode-batches', type=int, default=5)  # num batches to decode for evaluation; (0 to skip)
 
 args = parser.parse_args()
 MODE = 'inference' if args.inference else 'train'
@@ -126,12 +127,12 @@ if MODE == 'train':
 
 # Initialize from checkpoint if provided
 if MODE == 'train':
-    start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=None)
+    start_epoch = utils.init_load_train(model, args.checkpt_path, optimizer=optimizer, init_fn=None, device=device)
     if start_epoch == 1:
         with open(args.save_dir + "params.json", mode='w') as f:
             json.dump(vars(args), f)
 else:  # MODE == 'inference'
-    utils.load_inference(model, args.checkpt_path)
+    utils.load_inference(model, args.checkpt_path, device=device)
 
 
 # ======================= Run Script ======================= #
@@ -140,11 +141,16 @@ if MODE == 'train':
     epochs_left = args.epochs - start_epoch + 1
     train(train_loader, dev_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len, args.beam_size, model,
           epochs_left, criterion, optimizer, scheduler, save_dir=args.save_dir, start_epoch=start_epoch,
-          report_freq=1000, bleu_batches=args.bleu_batches, device=device)
+          report_freq=1000, decode_batches=args.decode_batches, device=device)
 
 else:  # MODE == 'inference'
-    print("Beginning BLEU score evaluation")
+    print(f"Beginning BLEU score evaluation at {datetime.now()}.")
     PRINT_SEQS = 5  # the number of example translations to print
-    bleu_avg = eval_bleu(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2),
-                         args.beam_size, bleu_batches=args.bleu_batches, print_seqs=PRINT_SEQS, device=device)
-    print(f"The model achieves an average BLEU score of {bleu_avg} over {args.bleu_batches * args.batch} sequences.")
+    hyps, refs = decode_outputs(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, int(args.max_len / 2),
+                         args.beam_size, args.decode_batches, PRINT_SEQS, device)
+
+    print(f"The model achieves the following corpus BLEU scores over {args.decode_batches * args.batch} sequences.")
+    for i in range(1, 7 + 1):
+        bleu_score = eval_bleu(hyps, refs, smoothing_method=i)
+        print(f"Method {i}:\tBLEU score: {bleu_score}")
+    print(f"Completed at {datetime.now()}.")
