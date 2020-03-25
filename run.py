@@ -24,22 +24,25 @@ parser.add_argument('--checkpt-path', type=str, default=None)
 # Data files
 SRC_LANG = 'en'
 TGT_LANG = 'de'
-parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
-parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
+# parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
+# parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
 
-parser.add_argument('--train-src', type=str, default=f"data/train.BPE.{SRC_LANG}")
-parser.add_argument('--train-tgt', type=str, default=f"data/train.BPE.{TGT_LANG}")
-parser.add_argument('--dev-src', type=str, default=f"data/dev.BPE.{SRC_LANG}")
-parser.add_argument('--dev-tgt', type=str, default=f"data/dev.BPE.{TGT_LANG}")
-parser.add_argument('--test-src', type=str, default=f"data/test.BPE.{SRC_LANG}")
-parser.add_argument('--test-tgt', type=str, default=f"data/test.BPE.{TGT_LANG}")
+parser.add_argument('--src-dict', type=str, default=f"data/joint.BPE.json")
+parser.add_argument('--tgt-dict', type=str, default=f"data/joint.BPE.json")
 
-# parser.add_argument('--train-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--train-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
-# parser.add_argument('--dev-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--dev-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
-# parser.add_argument('--test-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--test-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+# parser.add_argument('--train-src', type=str, default=f"data/train.BPE.{SRC_LANG}")
+# parser.add_argument('--train-tgt', type=str, default=f"data/train.BPE.{TGT_LANG}")
+# parser.add_argument('--dev-src', type=str, default=f"data/dev.BPE.{SRC_LANG}")
+# parser.add_argument('--dev-tgt', type=str, default=f"data/dev.BPE.{TGT_LANG}")
+# parser.add_argument('--test-src', type=str, default=f"data/test.BPE.{SRC_LANG}")
+# parser.add_argument('--test-tgt', type=str, default=f"data/test.BPE.{TGT_LANG}")
+
+parser.add_argument('--train-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--train-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+parser.add_argument('--dev-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--dev-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+parser.add_argument('--test-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--test-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
 
 # Hyperparameters: data
 parser.add_argument('-n', '--batch', type=int, default=16)
@@ -99,7 +102,8 @@ else:  # MODE == 'inference'
 subword_to_idx = json_to_dict(args.tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
 src_vocab_size = len(json_to_dict(args.src_dict))
-tgt_vocab_size = len(subword_to_idx)
+tgt_vocab_size = src_vocab_size
+
 print(f"Source language vocabulary size: {src_vocab_size}\t Target language vocabulary size: {tgt_vocab_size}")
 
 # ======================= Prepare Torch Objects ======================= #
@@ -111,8 +115,8 @@ model.to(device)
 
 if MODE == 'train':
     # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
-    criterion = LabelSmoothing(size=tgt_vocab_size, padding_idx=0, smoothing=0.1)
-    criterion.cuda()
+    criterion = LabelSmoothing(tgt_vocab_size=tgt_vocab_size, ignore_index=0, label_smoothing=0.1)
+#    criterion.cuda()
 
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98), eps=1e-9)
