@@ -7,9 +7,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from datetime import datetime
 
+from LabelSmoothing import LabelSmoothing
 from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
 from models import TransformerModel
 from train_test import train, decode_outputs, eval_bleu
+
 
 
 # ======================= Set Up Environment ======================= #
@@ -104,14 +106,16 @@ print(f"Source language vocabulary size: {src_vocab_size}\t Target language voca
 # Instantiate model and training objects
 model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
                          args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
-                         weight_tie=False)
+                         weight_tie=True)
 model.to(device)
 
 if MODE == 'train':
-    criterion = nn.CrossEntropyLoss(ignore_index=PAD)
+    # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
+    criterion = LabelSmoothing(size=tgt_vocab_size, padding_idx=0, smoothing=0.1)
+    criterion.cuda()
 
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98))
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98), eps=1e-9)
     elif args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     else:
