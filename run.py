@@ -7,9 +7,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from datetime import datetime
 
+from LabelSmoothing import LabelSmoothing
 from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
 from models import TransformerModel
 from train_test import train, decode_outputs, eval_bleu
+
 
 
 # ======================= Set Up Environment ======================= #
@@ -22,22 +24,25 @@ parser.add_argument('--checkpt-path', type=str, default=None)
 # Data files
 SRC_LANG = 'en'
 TGT_LANG = 'de'
-parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
-parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
+# parser.add_argument('--src-dict', type=str, default=f"data/train.BPE.{SRC_LANG}.json")
+# parser.add_argument('--tgt-dict', type=str, default=f"data/train.BPE.{TGT_LANG}.json")
 
-parser.add_argument('--train-src', type=str, default=f"data/train.BPE.{SRC_LANG}")
-parser.add_argument('--train-tgt', type=str, default=f"data/train.BPE.{TGT_LANG}")
-parser.add_argument('--dev-src', type=str, default=f"data/dev.BPE.{SRC_LANG}")
-parser.add_argument('--dev-tgt', type=str, default=f"data/dev.BPE.{TGT_LANG}")
-parser.add_argument('--test-src', type=str, default=f"data/test.BPE.{SRC_LANG}")
-parser.add_argument('--test-tgt', type=str, default=f"data/test.BPE.{TGT_LANG}")
+parser.add_argument('--src-dict', type=str, default=f"data/joint.BPE.json")
+parser.add_argument('--tgt-dict', type=str, default=f"data/joint.BPE.json")
 
-# parser.add_argument('--train-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--train-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
-# parser.add_argument('--dev-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--dev-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
-# parser.add_argument('--test-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
-# parser.add_argument('--test-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+# parser.add_argument('--train-src', type=str, default=f"data/train.BPE.{SRC_LANG}")
+# parser.add_argument('--train-tgt', type=str, default=f"data/train.BPE.{TGT_LANG}")
+# parser.add_argument('--dev-src', type=str, default=f"data/dev.BPE.{SRC_LANG}")
+# parser.add_argument('--dev-tgt', type=str, default=f"data/dev.BPE.{TGT_LANG}")
+# parser.add_argument('--test-src', type=str, default=f"data/test.BPE.{SRC_LANG}")
+# parser.add_argument('--test-tgt', type=str, default=f"data/test.BPE.{TGT_LANG}")
+
+parser.add_argument('--train-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--train-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+parser.add_argument('--dev-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--dev-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
+parser.add_argument('--test-src', type=str, default=f"data/train_small.BPE.{SRC_LANG}")
+parser.add_argument('--test-tgt', type=str, default=f"data/train_small.BPE.{TGT_LANG}")
 
 # Hyperparameters: data
 parser.add_argument('-n', '--batch', type=int, default=16)
@@ -98,20 +103,23 @@ subword_to_idx = json_to_dict(args.tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
 src_vocab_size = len(json_to_dict(args.src_dict))
 tgt_vocab_size = len(subword_to_idx)
+
 print(f"Source language vocabulary size: {src_vocab_size}\t Target language vocabulary size: {tgt_vocab_size}")
 
 # ======================= Prepare Torch Objects ======================= #
 # Instantiate model and training objects
 model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.max_len, args.num_heads,
                          args.enc_layers, args.dec_layers, args.dim_feedforward, args.dropout, args.activation,
-                         weight_tie=False)
+                         weight_tie=True)
 model.to(device)
 
 if MODE == 'train':
-    criterion = nn.CrossEntropyLoss(ignore_index=PAD)
+    # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
+    criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=PAD)
+    criterion.cuda()
 
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98))
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98), eps=1e-9)
     elif args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, momentum=args.momentum)
     else:
