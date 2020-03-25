@@ -2,33 +2,52 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class LabelSmoothing(nn.Module):
     """
     With label smoothing,
     KL-divergence between q_{smoothed ground truth prob.}(w)
     and p_{prob. computed by model}(w) is minimized.
     """
-
-    def __init__(self, tgt_vocab_size, ignore_index=0, label_smoothing=0.0):
+    def __init__(self, label_smoothing, vocabulary_size, pad_index=0):
         assert 0.0 < label_smoothing <= 1.0
-        self.ignore_index = ignore_index
+
         super(LabelSmoothing, self).__init__()
 
-        # TODO: remove -3 hack
-        smoothing_value = label_smoothing / (tgt_vocab_size - 3)
-        one_hot = torch.full((tgt_vocab_size,), smoothing_value)
-        one_hot[self.ignore_index] = 0
-        self.register_buffer('one_hot', one_hot.unsqueeze(0))
+        self.pad_index = pad_index
+        self.log_softmax = nn.LogSoftmax(dim=-1)
+        self.criterion = nn.KLDivLoss(reduction='sum')
+
+        smoothing_value = label_smoothing / (vocabulary_size - 2)  # exclude pad and true label
+        smoothed_targets = torch.full((vocabulary_size,), smoothing_value)
+        smoothed_targets[self.pad_index] = 0
+        self.register_buffer('smoothed_targets', smoothed_targets.unsqueeze(0))  # (1, vocabulary_size)
+
         self.confidence = 1.0 - label_smoothing
 
-    def forward(self, output, target):
+    def forward(self, outputs, targets):
         """
-        output (FloatTensor): batch_size x n_classes
-        target (LongTensor): batch_size
+        outputs (FloatTensor): (batch_size, seq_len, vocabulary_size)
+        targets (LongTensor): (batch_size, seq_len)
         """
-        model_prob = self.one_hot.repeat(target.size(0), 1)
-        model_prob.scatter_(1, target.unsqueeze(1), self.confidence)
-        model_prob.masked_fill_((target == self.ignore_index).unsqueeze(1), 0)
 
-        return F.kl_div(output, model_prob, reduction='sum')
+        outputs = outputs.transpose(1, 2)
+        batch_size, seq_len, vocabulary_size = outputs.size()
+
+        outputs_log_softmax = self.log_softmax(outputs)
+        outputs_flat = outputs_log_softmax.view(batch_size * seq_len, vocabulary_size)
+
+        targets_flat = targets.reshape(batch_size * seq_len)
+
+        smoothed_targets = self.smoothed_targets.repeat(targets_flat.size(0), 1)
+        # smoothed_targets: (batch_size * seq_len, vocabulary_size)
+
+        smoothed_targets.scatter_(1, targets_flat.unsqueeze(1), self.confidence)
+        # smoothed_targets: (batch_size * seq_len, vocabulary_size)
+
+        smoothed_targets.masked_fill_((targets_flat == self.pad_index).unsqueeze(1), 0)
+        # masked_targets: (batch_size * seq_len, vocabulary_size)
+
+        loss = self.criterion(outputs_flat, smoothed_targets)
+        count = (targets != self.pad_index).sum().item()
+        return loss
+

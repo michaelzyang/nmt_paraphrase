@@ -115,7 +115,7 @@ model.to(device)
 
 if MODE == 'train':
     # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
-    criterion = LabelSmoothing(tgt_vocab_size=tgt_vocab_size, ignore_index=0, label_smoothing=0.1)
+    criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=0)
 #    criterion.cuda()
 
     if args.optimizer == 'adam':
