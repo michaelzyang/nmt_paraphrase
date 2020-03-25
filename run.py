@@ -102,7 +102,7 @@ else:  # MODE == 'inference'
 subword_to_idx = json_to_dict(args.tgt_dict)
 idx_to_subword = {v: k for k, v in subword_to_idx.items()}
 src_vocab_size = len(json_to_dict(args.src_dict))
-tgt_vocab_size = src_vocab_size
+tgt_vocab_size = len(subword_to_idx)
 
 print(f"Source language vocabulary size: {src_vocab_size}\t Target language vocabulary size: {tgt_vocab_size}")
 
@@ -115,8 +115,8 @@ model.to(device)
 
 if MODE == 'train':
     # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
-    criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=0)
-#    criterion.cuda()
+    criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=PAD)
+    criterion.cuda()
 
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.98), eps=1e-9)
