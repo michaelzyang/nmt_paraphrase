@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 import math
+from data_processing import EOS_TOKEN
 
 def init_weights(m):
     raise NotImplementedError
@@ -100,8 +101,11 @@ class TransformerModel(nn.Module):
         src_embeddings = self.embedding(src_tokens, side="src")
         src_encoding = self.transformer.encoder(src_embeddings, src_key_padding_mask=src_key_padding_mask)
         sos_token = torch.ones(1).long().type_as(src_tokens) * sos_token
-        tgt_tokens = [sos_token.expand(src_tokens.size(0))]
-        for i in range(max_len):
+        batch_size = src_tokens.size(0)
+        tgt_tokens = [sos_token.expand(batch_size)]
+        is_ended = torch.zeros(batch_size, dtype=torch.bool, device=src_tokens.device)
+        src_length = src_tokens.size(1)
+        for i in range(min(2 * src_length, max_len)):
             tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=1), side="tgt")
             tgt_mask = self.transformer.generate_square_subsequent_mask(sz=tgt_embeddings.size(0)).type_as(tgt_embeddings)
             output = self.transformer.decoder(tgt_embeddings, src_encoding, tgt_mask=tgt_mask, memory_key_padding_mask=src_key_padding_mask) # (T, N, V)
@@ -109,6 +113,9 @@ class TransformerModel(nn.Module):
             next_logits = output[-1]  # (N, V) logits of the last predicted word
             _, words = torch.max(next_logits, dim=1)  # highest likelihood word (indices)
             tgt_tokens.append(words)
+            is_ended += torch.eq(words, EOS_TOKEN)
+            if is_ended.sum().item() == batch_size:
+                break
             # TODO return if <eos> predicted
         return torch.stack(tgt_tokens[1:], dim=1).cpu().numpy().tolist()
 
