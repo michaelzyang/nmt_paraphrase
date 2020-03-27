@@ -10,7 +10,7 @@ from datetime import datetime
 from LabelSmoothing import LabelSmoothing
 from data_processing import NMTData, json_to_dict, SOS_TOKEN, EOS_TOKEN, PAD
 from models import TransformerModel
-from train_test import train, decode_outputs, eval_bleu
+from train_test import train, decode_outputs, eval_bleu, eval_scorer
 
 
 
@@ -152,13 +152,17 @@ if MODE == 'train':
           report_freq=1000, decode_batches=args.decode_batches, device=device)
 
 else:  # MODE == 'inference'
-    print(f"Beginning BLEU score evaluation at {datetime.now()}.")
+    print(f"Beginning BLEU score evaluation over {args.decode_batches * args.batch} sequences at {datetime.now()}.")
     PRINT_SEQS = 5  # the number of example translations to print
 
     hyps, refs = decode_outputs(model, test_loader, idx_to_subword, SOS_TOKEN, EOS_TOKEN, args.max_len,
                          args.beam_size, args.decode_batches, print_seqs=PRINT_SEQS, device=device)
 
-    print(f"The model achieves the following corpus BLEU scores over {args.decode_batches * args.batch} sequences.")
+    print("Evaluating using fairseq bleu Scorer")
+    scorer = eval_scorer(hyps, refs)
+    print(scorer.result_string(), '\n')
+
+    print("Evaluating using nltk corpus_bleu")
     for i in range(7 + 1):
         bleu_score = eval_bleu(hyps, refs, smoothing_method=i)
         print(f"Smoothing method {i}\tBLEU score: {bleu_score}")

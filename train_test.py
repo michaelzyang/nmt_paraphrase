@@ -1,8 +1,10 @@
+from collections import defaultdict
 import numpy as np
 import torch
 import torch.nn as nn
 import sacrebleu  # https://github.com/mjpost/sacreBLEU
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
+from fairseq import bleu
 from datetime import datetime
 from data_processing import idxs_to_sentences
 
@@ -154,6 +156,30 @@ def eval_loss(model, data_loader, criterion, device='gpu'):
     model.train()
 
     return loss_accum / batch_count
+
+
+def eval_scorer(hyps, refs):
+    """
+    Uses fairseq Scorer to evaluate the corpus BLEU-4 score (weighted by sequence length) of the model on a given dataset
+    :param hyps: [str] the list of hypotheses
+    :param refs: [str] the list of references
+    :return: Scorer object
+    """
+    w2i = defaultdict(lambda: len(w2i))
+    def seq_tensors(seqs, vocab):
+        tensors = []
+        for seq in seqs:
+            idxs = [vocab[token] for token in seq.split()]  # note defaultdict behavior here
+            tensors.append(torch.tensor(idxs, dtype=torch.int32))
+        return tensors
+    refs_tensor = seq_tensors(refs, w2i)
+    hyps_tensor = seq_tensors(hyps, w2i)
+
+    PAD, EOS, UNK = 0, 2, 3
+    scorer = bleu.Scorer(PAD, EOS, UNK)
+    for i in range(len(refs)):
+        scorer.add(refs_tensor[i], hyps_tensor[i])
+    return scorer
 
 
 def eval_bleu(hyps, refs, smoothing_method=0):
