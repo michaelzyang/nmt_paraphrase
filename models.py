@@ -123,45 +123,7 @@ class TransformerModel(nn.Module):
             # TODO return if <eos> predicted
         return torch.stack(tgt_tokens[1:], dim=1).cpu().numpy().tolist()
 
-    def beam_search(self, src_tokens, src_key_pading_mask, sos_token, eos_token, max_len, beam_size=5):
-        # now only supports batch size 1
-        topk = []
-        probs = []
-        src_embeddings = self.embedding(src_tokens, side="src")
-        src_encoding = self.transformer.encoder(src_embeddings, src_key_padding_mask=src_key_padding_mask)
-        sos_token = torch.ones(1).long().type_as(src_tokens) * sos_token
-        tgt_tokens = [sos_token]
-        for i in range(max_len):
-            if i == 0:
-                tgt_embeddings = self.embedding(torch.stack(tgt_tokens, dim=1), side="tgt")
-                output = self.transformer.decoder(tgt_embeddings, src_encoding, memory_key_padding_mask=src_key_padding_mask)
-                output = self.linear(output)
-                next_logits = output[-1]  # (N, V) logits of the last predicted word
-                result = F.log_softmax(next_logits, dim=1)
-                probs, idxs = torch.topk(result, beam_size, dim=1)
-
-                for j in range(beam_size):
-                    topk.append(BeamCandidate(eos_token, tgt_tokens + [idxs[:, j]], probs[:, j].item()))
-            else:
-                candidates = []
-                for j in range(beam_size):
-                    if topk[j].is_end():
-                        candidates.append(topk[j])
-                    else:
-                        tgt_embeddings = self.embedding(torch.stack(topk[j].tokens, dim=1), side="tgt")
-                        output = self.transformer.decoder(tgt_embeddings, src_encoding, memory_key_padding_mask=src_key_padding_mask)
-                        output = self.linear(output)
-                        next_logits = output[-1]
-                        result = F.log_softmax(next_logits, dim=1)
-                        probs, idxs = torch.topk(result, beam_size, dim=1)
-
-                        for q in range(beam_size):
-                            candidates.append(topk[j].update(idxs[:, q], probs[:, q].item()))
-                candidates = sorted(candidates, key=lambda x: x.score, reverse=True)
-                topk = [candidates[_] for _ in range(beam_size)]
-        return torch.stack(topk[0].tokens[1:], dim=1).cpu().numpy().tolist(), topk[0].score
-    
-    def advanced_beam_search(self, src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size=5):
+    def beam_search(self, src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size=5, len_penalty=0.7):
         """ advanced beam search """
         batch_size = src_tokens.size(0)
         src_key_padding_mask = src_key_padding_mask.repeat_interleave(beam_size, dim=0)
@@ -169,27 +131,23 @@ class TransformerModel(nn.Module):
         src_embeddings = self.embedding(src_tokens, side="src")
         src_encoding = self.transformer.encoder(src_embeddings, src_key_padding_mask=src_key_padding_mask)
         sos_token = torch.ones(1).long().type_as(src_tokens) * sos_token
-        tgt_tokens = [sos_token.expand(batch_size, beam_size)] # keep batch_size, beam_size sequences
+        tgt_tokens = sos_token.expand(batch_size, beam_size).unsqueeze(dim=2) # [batch_size, beam_size, seq_len]
         scores = torch.zeros(batch_size, beam_size, device=src_tokens.device) # keep batch_size, beam_size scores
-        # masks = [torch.ones(batch_size * beam_size, device=src_tokens.device, dtype=torch.bool)] # keep batch_size X beam_size masks
         lengths = torch.zeros(batch_size, beam_size, device=src_tokens.device) # keep batch_size, beam_size lengths
         is_ended = torch.zeros(batch_size, beam_size, dtype=torch.bool, device=src_tokens.device) # [batch_size, beam_size]
         src_length = src_tokens.size(1)
-        # src_encoding = src_encoding.repeat_interleave(beam_size, dim=0) # [batch_size x beam_size, seq_len, dim]
-        # src_key_padding_mask = src_key_padding_mask.repeat_interleave(beam_size, dim=0)
-        for i in range(min(2 * src_length, max_len)):
-            partial_seq = torch.stack(tgt_tokens, dim=2) # [batch_size, beam_size, seq_len]
-            partial_seq = partial_seq.view(-1, len(tgt_tokens)) # [batch_size x beam_size, seq_len]
+        for i in range(min(int(1.2 * src_length + 10), max_len)):
+            partial_seq = tgt_tokens
+            partial_seq = partial_seq.view(-1, tgt_tokens.size(2)) # [batch_size x beam_size, seq_len]
             tgt_embeddings = self.embedding(partial_seq, side="tgt")
             tgt_mask = self.transformer.generate_square_subsequent_mask(sz=tgt_embeddings.size(0)).type_as(tgt_embeddings)
             output = self.transformer.decoder(tgt_embeddings, src_encoding, tgt_mask=tgt_mask, memory_key_padding_mask=src_key_padding_mask) # (T, N, V)
-            # output = self.linear(output)
             if self.weight_share:
                 output = F.linear(output, self.tgt_token_embedding.weight)
             else:
                 output = self.linear(output)
             next_logits = output[-1]
-            next_logits = F.log_softmax(next_logits, dim=1)
+            next_logits = F.log_softmax(next_logits, dim=1) # [batch_size x beam_size, word_dim]
             log_probs, words = torch.topk(next_logits, dim=1, k=beam_size) # [batch_size x beam_size, beam_size]
             log_probs = torch.stack(log_probs.chunk(batch_size)) # [batch_size, beam_size, beam_size]
             log_probs = log_probs.view(batch_size, -1) # [batch_size, beam_size x beam_size]
@@ -208,28 +166,30 @@ class TransformerModel(nn.Module):
             scores.masked_fill_(mask_idx, float('-inf'))
             scores = scores.view(batch_size, -1)
             scores += (log_probs * (~ _is_ended).float()) # do not update score for ended sequences
-            _scores = scores / torch.pow(_lengths, 1) # normalizing with length
+            _scores = scores / torch.pow(_lengths, len_penalty) # normalizing with length
             _scores = scores
             if i == 0:
                 _scores = _scores[:, :beam_size]
-            # _, idxs = _scores.topk(dim=1) # [batch_size, beam_size]
             _, idxs = torch.topk(_scores, dim=1, k=beam_size) # [batch_size, beam_size]
 
             next_word = torch.gather(words, dim=1, index=idxs) # [batch_size, beam_size]
+            prev_tokens = tgt_tokens.repeat_interleave(beam_size, dim=1) # [batch_size, beam_size x beam_size, seq_len]
+            first_idx = torch.arange(batch_size).to(prev_tokens.device).repeat_interleave(beam_size)
+            second_idx = idxs.view(-1)
+            prev_tokens = prev_tokens[first_idx, second_idx]
+            prev_tokens = prev_tokens.view(batch_size, beam_size, -1)
+            tgt_tokens = torch.cat((prev_tokens, next_word.unsqueeze(2)), dim=2)
             scores = torch.gather(scores, dim=1, index=idxs) # [batch_size, beam_size]
             lengths = torch.gather(_lengths, dim=1, index=idxs) # [batch_size, beam_size]
             is_ended = torch.gather(_is_ended, dim=1, index=idxs) # [batch_size, beam_size]
-            tgt_tokens.append(next_word)
             is_ended += torch.eq(next_word, EOS_TOKEN)
             if is_ended.sum().item() == batch_size * beam_size:
                 break
-            # TODO return if <eos> predicted
         _scores = scores / lengths # normalizing with length
         scores, idxs = torch.max(_scores, dim=1) # [batch_size]
-        sentences = torch.stack(tgt_tokens, dim=2) # [batch_size, beam_size, seq_len]
+        sentences = tgt_tokens
         sentences = sentences[torch.arange(batch_size).to(sentences.device), idxs] # [batch_size, seq_len]
         return sentences[:, 1:].cpu().numpy().tolist(), scores.cpu().numpy().tolist()
-
 
 # Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
 class PositionalEncoding(nn.Module):
