@@ -136,7 +136,7 @@ class TransformerModel(nn.Module):
         lengths = torch.zeros(batch_size, beam_size, device=src_tokens.device) # keep batch_size, beam_size lengths
         is_ended = torch.zeros(batch_size, beam_size, dtype=torch.bool, device=src_tokens.device) # [batch_size, beam_size]
         src_length = src_tokens.size(1)
-        for i in range(min(int(1.2 * src_length + 10), max_len)):
+        for i in range(min(int(1.2 * src_length + 10), max_len, 100)):
             partial_seq = tgt_tokens
             partial_seq = partial_seq.view(-1, tgt_tokens.size(2)) # [batch_size x beam_size, seq_len]
             tgt_embeddings = self.embedding(partial_seq, side="tgt")
@@ -167,7 +167,6 @@ class TransformerModel(nn.Module):
             scores = scores.view(batch_size, -1)
             scores += (log_probs * (~ _is_ended).float()) # do not update score for ended sequences
             _scores = scores / torch.pow(_lengths, len_penalty) # normalizing with length
-            _scores = scores
             if i == 0:
                 _scores = _scores[:, :beam_size]
             _, idxs = torch.topk(_scores, dim=1, k=beam_size) # [batch_size, beam_size]
