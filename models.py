@@ -184,7 +184,7 @@ class TransformerModel(nn.Module):
             is_ended += torch.eq(next_word, EOS_TOKEN)
             if is_ended.sum().item() == batch_size * beam_size:
                 break
-        _scores = scores / lengths # normalizing with length
+        _scores = scores / torch.pow(lengths, len_penalty) # normalizing with length
         scores, idxs = torch.max(_scores, dim=1) # [batch_size]
         sentences = tgt_tokens
         sentences = sentences[torch.arange(batch_size).to(sentences.device), idxs] # [batch_size, seq_len]
