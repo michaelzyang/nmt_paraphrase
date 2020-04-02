@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+''' Adapted and modified from: https://github.com/dreamgonfly/Transformer-pytorch/blob/master/losses.py '''
+
 class LabelSmoothing(nn.Module):
     """
     With label smoothing,
@@ -17,7 +19,7 @@ class LabelSmoothing(nn.Module):
         self.log_softmax = nn.LogSoftmax(dim=-1)
         self.criterion = nn.KLDivLoss(reduction='sum')
 
-        smoothing_value = label_smoothing / (vocabulary_size - 2)  # exclude pad and true label
+        smoothing_value = label_smoothing / (vocabulary_size - 3)  # exclude pad and true label
         smoothed_targets = torch.full((vocabulary_size,), smoothing_value)
         smoothed_targets[self.pad_index] = 0
         self.register_buffer('smoothed_targets', smoothed_targets.unsqueeze(0))  # (1, vocabulary_size)
@@ -48,6 +50,5 @@ class LabelSmoothing(nn.Module):
         # masked_targets: (batch_size * seq_len, vocabulary_size)
 
         loss = self.criterion(outputs_flat, smoothed_targets)
-        count = (targets != self.pad_index).sum().item()
         return loss
 

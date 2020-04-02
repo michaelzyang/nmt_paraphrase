@@ -114,8 +114,8 @@ model = TransformerModel(src_vocab_size, tgt_vocab_size, args.hidden_dim, args.m
 model.to(device)
 
 if MODE == 'train':
-    # criterion = nn.CrossEntropyLoss(ignore_index=PAD)
-    criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=PAD)
+    criterion = nn.CrossEntropyLoss(ignore_index=PAD)
+    # criterion = LabelSmoothing(label_smoothing=0.1, vocabulary_size=tgt_vocab_size, pad_index=PAD)
     criterion.cuda()
 
     if args.optimizer == 'adam':
