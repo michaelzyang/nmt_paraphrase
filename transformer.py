@@ -1,3 +1,4 @@
+""" source: https://pytorch.org/docs/stable/_modules/torch/nn/modules/transformer.html#Transformer """
 import torch
 import copy
 from torch.nn import functional as F
