@@ -5,31 +5,6 @@ import torch.nn.functional as F
 import math
 from data_processing import EOS_TOKEN
 
-def init_weights(m):
-    raise NotImplementedError
-    # if type(m) == nn.Conv2d or type(m) == nn.Linear:
-    #     nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
-    #     # nn.init.kaiming_normal_(m.weight.data, nonlinearity='relu')
-
-
-class BeamCandidate():
-    def __init__(self, eos, tokens=None, score=0):
-        if tokens is None:
-            self.tokens = []
-        else:
-            self.tokens = tokens
-        self.eos = eos
-        self.score = score
-        self.ended = False
-
-    def update(self, token, prob):
-        if token.item() == self.eos:
-            self.ended = True
-        return BeamCandidate(self.eos, self.tokens + [token], self.score + prob)
-
-    def is_end(self):
-        return self.ended
-
 
 class TransformerModel(nn.Module):
     """ Transformer Model """
@@ -55,9 +30,6 @@ class TransformerModel(nn.Module):
         self.d_model = hidden_dim  # following notation from Vaswani et al.
         self.d_ff = dim_feedforward  # following notation from Vaswani et al.
         self.h = nhead  # following notation from Vaswani et al.
-#         self.transformer = nn.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
-#                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
-#                                           dropout=dropout, activation=activation)
         self.transformer = transformer.Transformer(d_model=hidden_dim, nhead=nhead, num_encoder_layers=num_encoder_layers,
                                           num_decoder_layers=num_decoder_layers, dim_feedforward=dim_feedforward,
                                           dropout=dropout, activation=activation)
@@ -96,7 +68,6 @@ class TransformerModel(nn.Module):
         output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask,
                                   src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask,
                                   memory_key_padding_mask=memory_key_padding_mask)
-        # output = self.transformer(src_embeddings, tgt_embeddings, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=memory_mask)
         # (T, N, E)
         return self.linear(output) # (T, N, V)
 
@@ -120,7 +91,6 @@ class TransformerModel(nn.Module):
             is_ended += torch.eq(words, EOS_TOKEN)
             if is_ended.sum().item() == batch_size:
                 break
-            # TODO return if <eos> predicted
         return torch.stack(tgt_tokens[1:], dim=1).cpu().numpy().tolist()
 
     def beam_search(self, src_tokens, src_key_padding_mask, sos_token, eos_token, max_len, beam_size=5, len_penalty=0.7):
@@ -190,7 +160,7 @@ class TransformerModel(nn.Module):
         sentences = sentences[torch.arange(batch_size).to(sentences.device), idxs] # [batch_size, seq_len]
         return sentences[:, 1:].cpu().numpy().tolist(), scores.cpu().numpy().tolist()
 
-# Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
+# Source: https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
     r"""Inject some information about the relative or absolute position of the tokens
         in the sequence. The positional encodings have the same dimension as
